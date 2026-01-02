@@ -1,0 +1,5 @@
+{
+  "name": "PolyRoll",
+  "description": "An interactive 3D simulation of a regular octahedron rolling across a triangular tiling plane. Navigate the geometric landscape by clicking adjacent tiles.",
+  "requestFramePermissions": []
+}
