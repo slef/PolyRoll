@@ -12,6 +12,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1-D4jr4niOpQkJ-1bU3_D6Z
 
 **Prerequisites:**  Node.js
 
+<!-- Trigger deployment -->
 
 1. Install dependencies:
    `npm install`
