@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Terminal, ChevronLeft, ChevronRight, Play, Trash2, HelpCircle } from 'lucide-react';
+import { Terminal, ChevronLeft, ChevronRight, Play, Trash2, HelpCircle, RotateCw } from 'lucide-react';
 
 interface TurtleConsoleProps {
     commands: string;
     onCommandsChange: (newCommands: string) => void;
     onRun: () => void;
+    onRoll: () => void;
 }
 
-export const TurtleConsole: React.FC<TurtleConsoleProps> = ({ commands, onCommandsChange, onRun }) => {
+export const TurtleConsole: React.FC<TurtleConsoleProps> = ({ commands, onCommandsChange, onRun, onRoll }) => {
     const [isOpen, setIsOpen] = useState(true);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -73,13 +74,22 @@ export const TurtleConsole: React.FC<TurtleConsoleProps> = ({ commands, onComman
                                 </div>
                             </div>
 
-                            <button
-                                onClick={onRun}
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-200 active:scale-[0.98] shrink-0"
-                            >
-                                <Play size={18} fill="currentColor" />
-                                Run Turtle
-                            </button>
+                            <div className="flex gap-2 shrink-0">
+                                <button
+                                    onClick={onRun}
+                                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
+                                >
+                                    <Play size={18} fill="currentColor" />
+                                    Draw
+                                </button>
+                                <button
+                                    onClick={onRoll}
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-200 active:scale-[0.98]"
+                                >
+                                    <RotateCw size={18} />
+                                    Roll
+                                </button>
+                            </div>
                         </div>
 
                         <div className="p-4 bg-slate-50 border-t border-slate-200 shrink-0">

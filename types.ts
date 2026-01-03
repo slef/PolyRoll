@@ -42,3 +42,13 @@ export interface TurtleCommand {
   type: 'start' | 'fd' | 'bk' | 'lt' | 'rt';
   value: number | [number, number];
 }
+
+export interface EdgeCrossing {
+  fromFaceIndex: number;
+  toFaceIndex: number;
+  edgeVertex1: Vector3;
+  edgeVertex2: Vector3;
+  crossingPoint: Vector3;
+  segmentIndex: number; // which segment this crossing belongs to
+  pointIndexInSegment: number; // where in the segment this crossing occurs
+}

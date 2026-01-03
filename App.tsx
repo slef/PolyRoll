@@ -5,9 +5,9 @@ import { Simulation } from './components/Simulation';
 import { Floor } from './components/Floor';
 import { TurtleConsole } from './components/TurtleConsole';
 import { Info, Rotate3d, Target, History, ChevronRight } from 'lucide-react';
-import { HistoryStep, ShapeType, PathSegment } from './types';
+import { HistoryStep, ShapeType, PathSegment, EdgeCrossing } from './types';
 import { Vector3, Quaternion } from 'three';
-import { parseCommands, generatePath, generateFlatPath } from './utils/turtle';
+import { parseCommands, generatePath, generateFlatPath, extractEdgeCrossings } from './utils/turtle';
 import { getPolyhedron } from './polyhedra';
 
 export default function App() {
@@ -15,6 +15,7 @@ export default function App() {
   const [turtleCommands, setTurtleCommands] = useState<string>('start 0 0\nfd 1.0\nrt 90\nfd 1.0\nrt 90\nfd 1.0\nrt 90\nfd 1.0');
   const [pathSegments, setPathSegments] = useState<PathSegment[]>([]);
   const [flatPathSegments, setFlatPathSegments] = useState<PathSegment[]>([]);
+  const [rollAnimationCrossings, setRollAnimationCrossings] = useState<EdgeCrossing[]>([]);
 
   const getFaceOrientation = useCallback((quat: Quaternion, faceIndex: number, shape: ShapeType, initialCalibrationAngle?: number): {label: string, rawAngle: number} => {
     const definition = getPolyhedron(shape);
@@ -111,6 +112,33 @@ export default function App() {
       setFlatPathSegments(flatSegments);
   };
 
+  const handleRollAnimation = () => {
+      // Reset to initial position
+      const initialHistory = createInitialHistory(currentShape);
+      setHistory(initialHistory);
+      setCurrentStepIndex(0);
+
+      // Parse commands and generate path
+      const parsed = parseCommands(turtleCommands);
+      const segments = generatePath(currentShape, parsed);
+      const flatSegments = generateFlatPath(currentShape, parsed);
+
+      // Set the full paths (Simulation will progressively reveal them)
+      setPathSegments(segments);
+      setFlatPathSegments(flatSegments);
+
+      // Extract edge crossings from the path
+      const crossings = extractEdgeCrossings(currentShape, segments);
+
+      // Trigger the roll animation
+      setRollAnimationCrossings(crossings);
+  };
+
+  const handleRollAnimationComplete = () => {
+      // Animation finished, clear the crossings
+      setRollAnimationCrossings([]);
+  };
+
   return (
     <div className="w-full h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
       <header className="absolute top-0 left-0 w-full p-6 z-10 flex justify-between items-start pointer-events-none">
@@ -159,10 +187,11 @@ export default function App() {
         </div>
       </header>
 
-      <TurtleConsole 
-        commands={turtleCommands} 
-        onCommandsChange={setTurtleCommands} 
+      <TurtleConsole
+        commands={turtleCommands}
+        onCommandsChange={setTurtleCommands}
         onRun={handleRunCommands}
+        onRoll={handleRollAnimation}
       />
 
       <div className="absolute inset-0 z-0">
@@ -172,13 +201,15 @@ export default function App() {
           <directionalLight position={[5, 10, 5]} intensity={1.5} castShadow shadow-mapSize={[1024, 1024]} />
           <Environment preset="city" />
           <group>
-             <Simulation 
-                shape={currentShape} 
-                position={currentStep.position} 
-                quaternion={currentStep.quaternion} 
+             <Simulation
+                shape={currentShape}
+                position={currentStep.position}
+                quaternion={currentStep.quaternion}
                 pathSegments={pathSegments}
                 flatPathSegments={flatPathSegments}
-                onRollComplete={handleRollComplete} 
+                rollAnimationCrossings={rollAnimationCrossings}
+                onRollComplete={handleRollComplete}
+                onRollAnimationComplete={handleRollAnimationComplete}
              />
              <Floor shape={currentShape} />
              <ContactShadows position={[0, 0, 0]} opacity={0.4} scale={15} blur={2.5} far={2} resolution={512} color="#475569" />

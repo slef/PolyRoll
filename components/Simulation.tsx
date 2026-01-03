@@ -4,7 +4,7 @@ import { Vector3, Quaternion, Matrix4, Group, Color } from 'three';
 import * as THREE from 'three';
 import { Text, useCursor, Line } from '@react-three/drei';
 import { TRIANGLE_SIDE, EDGE_LENGTH } from '../constants';
-import { RollTarget, ShapeType, PathSegment } from '../types';
+import { RollTarget, ShapeType, PathSegment, EdgeCrossing } from '../types';
 import { getPolyhedron, PolyhedronDefinition } from '../polyhedra';
 
 interface SimulationProps {
@@ -13,13 +13,30 @@ interface SimulationProps {
   quaternion: Quaternion;
   pathSegments?: PathSegment[];
   flatPathSegments?: PathSegment[];
+  rollAnimationCrossings?: EdgeCrossing[];
   onRollComplete: (newPos: Vector3, newQuat: Quaternion, moveLabel: string, delta: {u: number, v: number}, faceIndex: number) => void;
+  onRollAnimationComplete?: () => void;
 }
 
-export const Simulation: React.FC<SimulationProps> = ({ shape, position, quaternion, pathSegments = [], flatPathSegments = [], onRollComplete }) => {
+export const Simulation: React.FC<SimulationProps> = ({
+  shape,
+  position,
+  quaternion,
+  pathSegments = [],
+  flatPathSegments = [],
+  rollAnimationCrossings = [],
+  onRollComplete,
+  onRollAnimationComplete
+}) => {
   const meshRef = useRef<Group>(null);
   const [isRolling, setIsRolling] = useState(false);
   const [targets, setTargets] = useState<RollTarget[]>([]);
+
+  // Animation state for roll animation mode
+  const [isRollAnimating, setIsRollAnimating] = useState(false);
+  const [currentCrossingIndex, setCurrentCrossingIndex] = useState(0);
+  const [animatedPathSegments, setAnimatedPathSegments] = useState<PathSegment[]>([]);
+  const [animatedFlatPathSegments, setAnimatedFlatPathSegments] = useState<PathSegment[]>([]);
 
   const rollStartPos = useRef(new Vector3());
   const rollStartQuat = useRef(new Quaternion());
@@ -27,6 +44,7 @@ export const Simulation: React.FC<SimulationProps> = ({ shape, position, quatern
   const rollPivot = useRef(new Vector3());
   const rollProgress = useRef(0);
   const ROLL_DURATION = 0.4;
+  const ROLL_ANIMATION_DURATION = 1.0; // 1 second per roll for animation mode
   const pendingMove = useRef<{label: string, delta: {u: number, v: number}} | null>(null);
 
   // Get polyhedron definition from registry
@@ -34,13 +52,42 @@ export const Simulation: React.FC<SimulationProps> = ({ shape, position, quatern
   const rollAngle = definition.rollAngle;
   const faceCenters = definition.faceCenters;
 
+  // Start roll animation when crossings are provided
   useEffect(() => {
-    if (!isRolling && meshRef.current) {
+    if (rollAnimationCrossings && rollAnimationCrossings.length > 0) {
+      setIsRollAnimating(true);
+      setCurrentCrossingIndex(0);
+      // Show full paths during animation
+      setAnimatedPathSegments(pathSegments);
+      setAnimatedFlatPathSegments(flatPathSegments);
+    }
+  }, [rollAnimationCrossings]);
+
+  // Trigger next roll in animation sequence
+  useEffect(() => {
+    if (isRollAnimating && !isRolling && currentCrossingIndex < rollAnimationCrossings.length) {
+      // Start the next roll after a brief delay
+      const timer = setTimeout(() => {
+        const crossing = rollAnimationCrossings[currentCrossingIndex];
+        triggerRollForCrossing(crossing);
+      }, 100);
+      return () => clearTimeout(timer);
+    } else if (isRollAnimating && !isRolling && currentCrossingIndex >= rollAnimationCrossings.length) {
+      // Animation complete
+      setIsRollAnimating(false);
+      if (onRollAnimationComplete) {
+        onRollAnimationComplete();
+      }
+    }
+  }, [isRollAnimating, isRolling, currentCrossingIndex, rollAnimationCrossings]);
+
+  useEffect(() => {
+    if (!isRolling && !isRollAnimating && meshRef.current) {
         meshRef.current.position.copy(position);
         meshRef.current.quaternion.copy(quaternion);
         updateTargets(position, quaternion);
     }
-  }, [position, quaternion, isRolling, shape]);
+  }, [position, quaternion, isRolling, isRollAnimating, shape]);
 
   const updateTargets = (pos: Vector3, quat: Quaternion) => {
     const matrix = new Matrix4().compose(pos, quat, new Vector3(1, 1, 1));
@@ -103,21 +150,70 @@ export const Simulation: React.FC<SimulationProps> = ({ shape, position, quatern
     return faceIndex + 1;
   };
 
-  const handleRoll = (target: RollTarget) => {
-    if (isRolling || !meshRef.current) return;
+  const initiateRoll = (axis: Vector3, pivot: Vector3, moveData?: {label: string, delta: {u: number, v: number}}) => {
+    if (!meshRef.current) return;
+
     setIsRolling(true);
-    const { label, delta } = definition.getMoveData(target.directionAngle);
-    pendingMove.current = { label, delta };
     rollStartPos.current.copy(meshRef.current.position);
     rollStartQuat.current.copy(meshRef.current.quaternion);
-    rollAxis.current.copy(target.axis);
-    rollPivot.current.copy(target.point);
+    rollAxis.current.copy(axis);
+    rollPivot.current.copy(pivot);
     rollProgress.current = 0;
+    pendingMove.current = moveData || null;
   };
 
-  useFrame((state, delta) => {
+  const triggerRollForCrossing = (crossing: EdgeCrossing) => {
+    if (!meshRef.current) return;
+
+    // We need to find which edge on the bottom face corresponds to this crossing
+    // Get the current world vertices
+    const matrix = new Matrix4().compose(
+      meshRef.current.position,
+      meshRef.current.quaternion,
+      new Vector3(1, 1, 1)
+    );
+    const localVertices = definition.getVertices();
+    const worldVertices = localVertices.map(v => v.clone().applyMatrix4(matrix));
+
+    // Transform the crossing edge vertices to world space to find matching bottom vertices
+    const worldEdge1 = crossing.edgeVertex1.clone().applyMatrix4(matrix);
+    const worldEdge2 = crossing.edgeVertex2.clone().applyMatrix4(matrix);
+
+    // Find which bottom vertices match this edge
+    const sorted = [...worldVertices].map((v, i) => ({ v, i })).sort((a, b) => a.v.y - b.v.y);
+    const groundCount = definition.getBottomVertexCount();
+    const bottomVertices = sorted.slice(0, groundCount).map(item => item.v);
+
+    // Find the two bottom vertices that match the crossing edge
+    let matchingBottomVerts: Vector3[] = [];
+    for (const bv of bottomVertices) {
+      if (bv.distanceTo(worldEdge1) < 0.01 || bv.distanceTo(worldEdge2) < 0.01) {
+        matchingBottomVerts.push(bv);
+      }
+    }
+
+    if (matchingBottomVerts.length >= 2) {
+      // Use the same logic as handleRoll
+      const pivot = new Vector3().addVectors(matchingBottomVerts[0], matchingBottomVerts[1]).multiplyScalar(0.5);
+      const currentFloorCenter = new Vector3(meshRef.current.position.x, 0, meshRef.current.position.z);
+      const toPivot = new Vector3().subVectors(pivot, currentFloorCenter);
+      const rollDirection = toPivot.clone().normalize();
+      const axis = new Vector3(0, 1, 0).cross(rollDirection).normalize();
+
+      initiateRoll(axis, pivot);
+    }
+  };
+
+  const handleRoll = (target: RollTarget) => {
+    if (isRolling || isRollAnimating || !meshRef.current) return;
+    const { label, delta } = definition.getMoveData(target.directionAngle);
+    initiateRoll(target.axis, target.point, { label, delta });
+  };
+
+  useFrame((_state, delta) => {
     if (isRolling && meshRef.current) {
-        rollProgress.current += delta / ROLL_DURATION;
+        const duration = isRollAnimating ? ROLL_ANIMATION_DURATION : ROLL_DURATION;
+        rollProgress.current += delta / duration;
         if (rollProgress.current >= 1) rollProgress.current = 1;
 
         const t = rollProgress.current;
@@ -128,25 +224,36 @@ export const Simulation: React.FC<SimulationProps> = ({ shape, position, quatern
         const vecToCenter = new Vector3().subVectors(rollStartPos.current, rollPivot.current);
         vecToCenter.applyQuaternion(qRot);
         const newPos = new Vector3().addVectors(rollPivot.current, vecToCenter);
-        
+
         meshRef.current.position.copy(newPos);
         meshRef.current.quaternion.copy(newQuat);
-        
+
         if (rollProgress.current === 1) {
             setIsRolling(false);
-            const finalFace = calculateFaceIndex(newQuat);
-            if (pendingMove.current) {
-                onRollComplete(newPos, newQuat, pendingMove.current.label, pendingMove.current.delta, finalFace);
+
+            if (isRollAnimating) {
+              // In animation mode, just advance to next crossing
+              // The paths are already fully rendered, just the polyhedron moves
+              setCurrentCrossingIndex(prev => prev + 1);
+            } else {
+              // Regular roll mode
+              const finalFace = calculateFaceIndex(newQuat);
+              if (pendingMove.current) {
+                  onRollComplete(newPos, newQuat, pendingMove.current.label, pendingMove.current.delta, finalFace);
+              }
             }
         }
     }
   });
 
+  const displayPathSegments = isRollAnimating ? animatedPathSegments : pathSegments;
+  const displayFlatPathSegments = isRollAnimating ? animatedFlatPathSegments : flatPathSegments;
+
   return (
     <group>
         <group ref={meshRef} position={position} quaternion={quaternion}>
             <PolyhedronMesh definition={definition} />
-            {pathSegments.map((segment, i) => (
+            {displayPathSegments.map((segment, i) => (
                 <Line
                     key={`mesh-path-${i}`}
                     points={segment.points}
@@ -158,7 +265,7 @@ export const Simulation: React.FC<SimulationProps> = ({ shape, position, quatern
                 />
             ))}
         </group>
-        {flatPathSegments.map((segment, i) => (
+        {displayFlatPathSegments.map((segment, i) => (
             <Line
                 key={`flat-path-${i}`}
                 points={segment.points}
@@ -169,7 +276,7 @@ export const Simulation: React.FC<SimulationProps> = ({ shape, position, quatern
                 depthTest={true}
             />
         ))}
-        {!isRolling && targets.map((target, i) => (
+        {!isRolling && !isRollAnimating && targets.map((target, i) => (
             <InteractionZone key={i} target={target} isSquare={definition.latticeType === 'square'} onClick={() => handleRoll(target)} />
         ))}
     </group>

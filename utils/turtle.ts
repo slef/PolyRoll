@@ -1,5 +1,5 @@
 import { Vector3, Quaternion } from 'three';
-import { ShapeType, PathSegment, TurtleState, TurtleCommand } from '../types';
+import { ShapeType, PathSegment, TurtleState, TurtleCommand, EdgeCrossing } from '../types';
 import { getPolyhedron, FaceData } from '../polyhedra';
 
 export function parseCommands(text: string): TurtleCommand[] {
@@ -174,6 +174,72 @@ function moveTurtle(state: TurtleState, distance: number, faces: FaceData[], cur
             remaining = 0;
         }
     }
+}
+
+export function extractEdgeCrossings(shape: ShapeType, segments: PathSegment[]): EdgeCrossing[] {
+    const definition = getPolyhedron(shape);
+    const faces = definition.getFaces();
+    const crossings: EdgeCrossing[] = [];
+
+    segments.forEach((segment, segmentIndex) => {
+        for (let i = 0; i < segment.points.length - 1; i++) {
+            const p1 = segment.points[i];
+            const p2 = segment.points[i + 1];
+
+            // Determine which faces these points belong to
+            const face1 = findClosestFace(p1, faces);
+            const face2 = findClosestFace(p2, faces);
+
+            if (face1 && face2 && face1.index !== face2.index) {
+                // Found a face transition - find the shared edge
+                const sharedEdge = findSharedEdge(face1, face2);
+                if (sharedEdge) {
+                    crossings.push({
+                        fromFaceIndex: face1.index,
+                        toFaceIndex: face2.index,
+                        edgeVertex1: sharedEdge.v1,
+                        edgeVertex2: sharedEdge.v2,
+                        crossingPoint: p2.clone(),
+                        segmentIndex,
+                        pointIndexInSegment: i + 1
+                    });
+                }
+            }
+        }
+    });
+
+    return crossings;
+}
+
+function findClosestFace(point: Vector3, faces: FaceData[]): FaceData | null {
+    let closestFace: FaceData | null = null;
+    let minDist = Infinity;
+
+    faces.forEach(face => {
+        const dist = point.distanceTo(face.center);
+        if (dist < minDist) {
+            minDist = dist;
+            closestFace = face;
+        }
+    });
+
+    return closestFace;
+}
+
+function findSharedEdge(face1: FaceData, face2: FaceData): { v1: Vector3, v2: Vector3 } | null {
+    for (let i = 0; i < face1.vertices.length; i++) {
+        const v1 = face1.vertices[i];
+        const v2 = face1.vertices[(i + 1) % face1.vertices.length];
+
+        // Check if face2 has both vertices
+        const hasV1 = face2.vertices.some(v => v.distanceTo(v1) < 0.01);
+        const hasV2 = face2.vertices.some(v => v.distanceTo(v2) < 0.01);
+
+        if (hasV1 && hasV2) {
+            return { v1, v2 };
+        }
+    }
+    return null;
 }
 
 export function generateFlatPath(shape: ShapeType, commands: TurtleCommand[]): PathSegment[] {
