@@ -1,6 +1,6 @@
 import { Vector3, Quaternion } from 'three';
 
-export type ShapeType = 'octahedron' | 'icosahedron' | 'cube';
+export type ShapeType = 'octahedron' | 'icosahedron' | 'cube' | 'tetrahedron';
 
 export interface GameState {
   isRolling: boolean;

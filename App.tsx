@@ -148,7 +148,7 @@ export default function App() {
                     <Rotate3d className="text-indigo-600" /> PolyRoll
                 </h1>
                 <div className="flex bg-slate-100 rounded-lg p-1 mt-3 gap-1">
-                    {(['octahedron', 'icosahedron', 'cube'] as ShapeType[]).map(s => (
+                    {(['tetrahedron', 'cube', 'octahedron', 'icosahedron'] as ShapeType[]).map(s => (
                         <button key={s} onClick={() => changeShape(s)}
                             className={`flex-1 px-3 py-1.5 rounded-md text-sm font-semibold transition-all capitalize ${currentShape === s ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                         >
