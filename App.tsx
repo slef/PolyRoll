@@ -4,15 +4,11 @@ import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import { Simulation } from './components/Simulation';
 import { Floor } from './components/Floor';
 import { TurtleConsole } from './components/TurtleConsole';
-import { Info, Rotate3d, Target, History, ChevronRight, Box } from 'lucide-react';
-import { 
-    INITIAL_POSITION_OCT, INITIAL_QUATERNION_OCT, OCT_FACE_CENTERS,
-    INITIAL_POSITION_ICO, INITIAL_QUATERNION_ICO, ICO_FACE_CENTERS,
-    INITIAL_POSITION_CUBE, INITIAL_QUATERNION_CUBE, CUBE_FACE_CENTERS
-} from './constants';
+import { Info, Rotate3d, Target, History, ChevronRight } from 'lucide-react';
 import { HistoryStep, ShapeType, PathSegment } from './types';
 import { Vector3, Quaternion } from 'three';
 import { parseCommands, generatePath, generateFlatPath } from './utils/turtle';
+import { getPolyhedron } from './polyhedra';
 
 export default function App() {
   const [currentShape, setCurrentShape] = useState<ShapeType>('octahedron');
@@ -21,41 +17,31 @@ export default function App() {
   const [flatPathSegments, setFlatPathSegments] = useState<PathSegment[]>([]);
 
   const getFaceOrientation = useCallback((quat: Quaternion, faceIndex: number, shape: ShapeType, initialCalibrationAngle?: number): {label: string, rawAngle: number} => {
-    const centers = shape === 'octahedron' ? OCT_FACE_CENTERS : shape === 'cube' ? CUBE_FACE_CENTERS : ICO_FACE_CENTERS;
-    const maxFaces = shape === 'octahedron' ? 8 : shape === 'cube' ? 6 : 20;
+    const definition = getPolyhedron(shape);
+    const centers = definition.faceCenters;
+    const maxFaces = definition.faceCount;
 
     if (faceIndex < 1 || faceIndex > maxFaces) return { label: '?', rawAngle: 0 };
     const localNormal = centers[faceIndex - 1].clone().normalize();
     const textLocalQuat = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), localNormal);
     const textWorldQuat = quat.clone().multiply(textLocalQuat);
     const textUpWorld = new Vector3(0, 1, 0).applyQuaternion(textWorldQuat);
-    
+
     let angle = Math.atan2(textUpWorld.z, textUpWorld.x) * (180 / Math.PI);
     if (angle < 0) angle += 360;
-    
+
     const calib = initialCalibrationAngle ?? angle;
     let delta = angle - calib;
     if (delta < 0) delta += 360;
-    
-    if (shape === 'cube') {
-        const sector = Math.round(delta / 90) % 4;
-        return { label: sector === 0 || sector === 2 ? 'X' : 'Z', rawAngle: angle };
-    } else {
-        const sector = Math.round(delta / 60) % 6;
-        let label = 'X';
-        if (sector === 0 || sector === 3) label = 'X';
-        else if (sector === 2 || sector === 5) label = 'Y';
-        else if (sector === 4 || sector === 1) label = 'Z';
-        return { label, rawAngle: angle };
-    }
+
+    return { label: definition.getOrientationLabel(delta), rawAngle: angle };
   }, []);
 
   const createInitialHistory = (shape: ShapeType): HistoryStep[] => {
-      const pos = shape === 'octahedron' ? INITIAL_POSITION_OCT : shape === 'cube' ? INITIAL_POSITION_CUBE : INITIAL_POSITION_ICO;
-      const quat = shape === 'octahedron' ? INITIAL_QUATERNION_OCT : shape === 'cube' ? INITIAL_QUATERNION_CUBE : INITIAL_QUATERNION_ICO;
+      const definition = getPolyhedron(shape);
       return [{
-        position: pos.clone(),
-        quaternion: quat.clone(),
+        position: definition.initialPosition.clone(),
+        quaternion: definition.initialQuaternion.clone(),
         faceIndex: 1,
         orientation: 'X',
         coordinate: { u: 0, v: 0 },
@@ -66,10 +52,13 @@ export default function App() {
   };
 
   const [history, setHistory] = useState<HistoryStep[]>(() => createInitialHistory('octahedron'));
-  const [calibAngles, setCalibAngles] = useState<{octahedron: number, icosahedron: number, cube: number}>(() => {
-      const oct = getFaceOrientation(INITIAL_QUATERNION_OCT, 1, 'octahedron');
-      const ico = getFaceOrientation(INITIAL_QUATERNION_ICO, 1, 'icosahedron');
-      const cub = getFaceOrientation(INITIAL_QUATERNION_CUBE, 1, 'cube');
+  const [calibAngles] = useState<{octahedron: number, icosahedron: number, cube: number}>(() => {
+      const octDef = getPolyhedron('octahedron');
+      const icoDef = getPolyhedron('icosahedron');
+      const cubeDef = getPolyhedron('cube');
+      const oct = getFaceOrientation(octDef.initialQuaternion, 1, 'octahedron');
+      const ico = getFaceOrientation(icoDef.initialQuaternion, 1, 'icosahedron');
+      const cub = getFaceOrientation(cubeDef.initialQuaternion, 1, 'cube');
       return { octahedron: oct.rawAngle, icosahedron: ico.rawAngle, cube: cub.rawAngle };
   });
 

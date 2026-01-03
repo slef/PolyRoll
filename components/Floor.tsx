@@ -1,16 +1,20 @@
 import React, { useMemo } from 'react';
-import { TRIANGLE_SIDE, EDGE_LENGTH, GRID_COLOR_1, GRID_COLOR_2, VERTEX_COLORS } from '../constants';
+import { TRIANGLE_SIDE, EDGE_LENGTH, GRID_COLOR_1, GRID_COLOR_2 } from '../constants';
 import { Color, DoubleSide, InstancedMesh, Object3D } from 'three';
 import { ShapeType } from '../types';
+import { getPolyhedron } from '../polyhedra';
 
 interface FloorProps {
     shape: ShapeType;
 }
 
 export const Floor: React.FC<FloorProps> = ({ shape }) => {
+  const definition = getPolyhedron(shape);
+  const latticeType = definition.latticeType;
+
   return (
-    <group position={[0, -0.005, 0]}> 
-        {shape === 'cube' ? <SquareFloorMesh /> : <TriangularFloorMesh />}
+    <group position={[0, -0.005, 0]}>
+        {latticeType === 'square' ? <SquareFloorMesh /> : <TriangularFloorMesh />}
         <LatticeVertices shape={shape} />
         <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.01, 0]}>
             <ringGeometry args={[0.1, 0.15, 32]} />
@@ -24,10 +28,9 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
     const { positions, colors } = useMemo(() => {
         const posArray: number[] = [];
         const colArray: number[] = [];
-        const colorPalette = VERTEX_COLORS.map(c => new Color(c));
-        const uniformColor = new Color('#cbd5e1');
+        const definition = getPolyhedron(shape);
 
-        if (shape === 'cube') {
+        if (definition.latticeType === 'square') {
             const size = EDGE_LENGTH;
             const count = 12;
             // Align lattice vertices perfectly with cube corners.
@@ -40,27 +43,24 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
                     const vx = i * size - size/2;
                     const vz = j * size - size/2;
                     posArray.push(vx, 0.005, vz);
-                    
-                    // 2-coloring (checkerboard parity)
-                    // (i + j) % 2 works perfectly for a square grid.
-                    const colorIdx = (Math.abs(i + j) % 2);
-                    const c = colorPalette[colorIdx]; 
+
+                    const colorHex = definition.getLatticeVertexColor(i, j);
+                    const c = new Color(colorHex);
                     colArray.push(c.r, c.g, c.b);
                 }
             }
         } else {
-            const side = TRIANGLE_SIDE; 
+            const side = TRIANGLE_SIDE;
             const height = side * Math.sqrt(3) / 2;
             const rows = 12, cols = 12;
-            const uniquePoints = new Map<string, {x: number, z: number, colorIdx: number}>();
+            const uniquePoints = new Map<string, {x: number, z: number, i: number, j: number}>();
             const originZ = -2 * height / 3;
             const addPoint = (x: number, z: number) => {
                 const key = `${x.toFixed(3)},${z.toFixed(3)}`;
                 if(uniquePoints.has(key)) return;
                 const j = Math.round((z - originZ) / height);
                 const i = Math.round((x - j * (side / 2)) / side);
-                const colorIdx = ( ( (2 + 2*i + j) % 3 ) + 3) % 3;
-                uniquePoints.set(key, {x, z, colorIdx});
+                uniquePoints.set(key, {x, z, i, j});
             };
             for (let r = -rows; r <= rows; r++) {
                 for (let c = -cols; c <= cols; c++) {
@@ -72,13 +72,10 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
                 }
             }
             uniquePoints.forEach(pt => {
-                posArray.push(pt.x, 0.005, pt.z); 
-                if (shape === 'octahedron') {
-                    const c = colorPalette[pt.colorIdx];
-                    colArray.push(c.r, c.g, c.b);
-                } else {
-                    colArray.push(uniformColor.r, uniformColor.g, uniformColor.b);
-                }
+                posArray.push(pt.x, 0.005, pt.z);
+                const colorHex = definition.getLatticeVertexColor(pt.i, pt.j);
+                const c = new Color(colorHex);
+                colArray.push(c.r, c.g, c.b);
             });
         }
 

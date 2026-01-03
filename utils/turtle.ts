@@ -1,69 +1,6 @@
-import { Vector3, Quaternion, Plane } from 'three';
-import { 
-    ShapeType, PathSegment, TurtleState, TurtleCommand 
-} from '../types';
-import { 
-    CUBE_FACE_CENTERS, CUBE_VERTICES, CUBE_INRADIUS,
-    OCT_FACE_CENTERS, OCTAHEDRON_RADIUS, OCT_INRADIUS,
-    ICO_FACE_CENTERS, ICO_VERTICES_RAW, ICO_INDICES, ICO_INRADIUS,
-    INITIAL_QUATERNION_OCT, INITIAL_QUATERNION_CUBE, INITIAL_QUATERNION_ICO
-} from '../constants';
-
-interface FaceData {
-    index: number;
-    center: Vector3;
-    normal: Vector3;
-    vertices: Vector3[];
-}
-
-function getFaces(shape: ShapeType): FaceData[] {
-    if (shape === 'cube') {
-        return CUBE_FACE_CENTERS.map((c, i) => {
-            const normal = c.clone().normalize();
-            // Robust sorting using ATAN2 around the face normal
-            const center = c.clone().multiplyScalar(CUBE_INRADIUS);
-            const faceVerts = CUBE_VERTICES.filter(v => v.dot(normal) > 0.1);
-            
-            // Create a local coordinate system for the face
-            const up = Math.abs(normal.y) > 0.9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
-            const tangent = new Vector3().crossVectors(normal, up).normalize();
-            const bitangent = new Vector3().crossVectors(normal, tangent).normalize();
-
-            const sorted = [...faceVerts].sort((a, b) => {
-                const da = a.clone().sub(center);
-                const db = b.clone().sub(center);
-                const angleA = Math.atan2(da.dot(bitangent), da.dot(tangent));
-                const angleB = Math.atan2(db.dot(bitangent), db.dot(tangent));
-                return angleA - angleB;
-            });
-
-            return { index: i + 1, center, normal, vertices: sorted };
-        });
-    } else if (shape === 'octahedron') {
-        const R = OCTAHEDRON_RADIUS;
-        return OCT_FACE_CENTERS.map((normal, i) => {
-            const n = normal.clone().normalize();
-            const v1 = new Vector3(Math.sign(normal.x) * R, 0, 0);
-            const v2 = new Vector3(0, Math.sign(normal.y) * R, 0);
-            const v3 = new Vector3(0, 0, Math.sign(normal.z) * R);
-            const cp = new Vector3().subVectors(v2, v1).cross(new Vector3().subVectors(v3, v1));
-            // Ensure CCW winding
-            const vertices = cp.dot(n) < 0 ? [v1, v3, v2] : [v1, v2, v3];
-            return { index: i + 1, center: n.clone().multiplyScalar(OCT_INRADIUS), normal: n, vertices };
-        });
-    } else {
-        const faces: FaceData[] = [];
-        for (let i = 0; i < ICO_INDICES.length; i += 3) {
-            const v1 = ICO_VERTICES_RAW[ICO_INDICES[i]];
-            const v2 = ICO_VERTICES_RAW[ICO_INDICES[i+1]];
-            const v3 = ICO_VERTICES_RAW[ICO_INDICES[i+2]];
-            const center = new Vector3().add(v1).add(v2).add(v3).divideScalar(3);
-            const normal = center.clone().normalize();
-            faces.push({ index: i / 3 + 1, center, normal, vertices: [v1, v2, v3] });
-        }
-        return faces;
-    }
-}
+import { Vector3, Quaternion } from 'three';
+import { ShapeType, PathSegment, TurtleState, TurtleCommand } from '../types';
+import { getPolyhedron, FaceData } from '../polyhedra';
 
 export function parseCommands(text: string): TurtleCommand[] {
     const lines = text.split('\n');
@@ -87,10 +24,11 @@ function offsetPoint(pos: Vector3, face: FaceData): Vector3 {
 }
 
 export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathSegment[] {
-    const faces = getFaces(shape);
-    
+    const definition = getPolyhedron(shape);
+    const faces = definition.getFaces();
+
     // Always start on Face 1
-    const startFace = faces.find(f => f.index === 1);
+    const startFace = faces.find((f: FaceData) => f.index === 1);
 
     if (!startFace) {
         return [];
@@ -239,8 +177,9 @@ function moveTurtle(state: TurtleState, distance: number, faces: FaceData[], cur
 }
 
 export function generateFlatPath(shape: ShapeType, commands: TurtleCommand[]): PathSegment[] {
-    const faces = getFaces(shape);
-    const startFace = faces.find(f => f.index === 1);
+    const definition = getPolyhedron(shape);
+    const faces = definition.getFaces();
+    const startFace = faces.find((f: FaceData) => f.index === 1);
     if (!startFace) return [];
 
     // Calculate the same local heading as in the 3D path
@@ -248,10 +187,7 @@ export function generateFlatPath(shape: ShapeType, commands: TurtleCommand[]): P
     const localHeading = new Vector3().subVectors(midPointFirstEdge, startFace.center).normalize();
 
     // Determine the initial orientation of the polyhedron
-    let quat = new Quaternion();
-    if (shape === 'octahedron') quat.copy(INITIAL_QUATERNION_OCT);
-    else if (shape === 'cube') quat.copy(INITIAL_QUATERNION_CUBE);
-    else quat.copy(INITIAL_QUATERNION_ICO);
+    const quat = definition.initialQuaternion.clone();
 
     // Transform local heading to world space. 
     // Since Face 1 is initially on the floor (pointing down), this heading will be in the XZ plane.
