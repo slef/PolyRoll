@@ -1,14 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Terminal, ChevronLeft, ChevronRight, Play, Trash2, HelpCircle, RotateCw } from 'lucide-react';
+import { Terminal, ChevronLeft, ChevronRight, Play, Trash2, HelpCircle, RotateCw, AlertTriangle } from 'lucide-react';
 
 interface TurtleConsoleProps {
     commands: string;
     onCommandsChange: (newCommands: string) => void;
     onRun: () => void;
     onRoll: () => void;
+    error?: {
+        message: string;
+        lineNumber: number; // 1-based
+    };
 }
 
-export const TurtleConsole: React.FC<TurtleConsoleProps> = ({ commands, onCommandsChange, onRun, onRoll }) => {
+export const TurtleConsole: React.FC<TurtleConsoleProps> = ({ commands, onCommandsChange, onRun, onRoll, error }) => {
     const [isOpen, setIsOpen] = useState(true);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -45,12 +49,17 @@ export const TurtleConsole: React.FC<TurtleConsoleProps> = ({ commands, onComman
                         <div className="flex-1 p-4 flex flex-col gap-3 overflow-hidden min-h-0">
                             <div className="relative group flex-1 min-h-[20rem]">
                                 <div className="absolute inset-0 bg-slate-900 rounded-xl overflow-hidden flex border border-slate-700">
-                                    <div 
+                                    <div
                                         ref={lineNumbersRef}
                                         className="w-10 bg-slate-800 text-slate-500 text-[10px] font-mono py-4 flex flex-col items-center select-none border-r border-slate-700 h-full overflow-hidden shrink-0"
                                     >
                                         {commands.split('\n').map((_, i) => (
-                                            <div key={i} className="h-[1.25rem] leading-[1.25rem]">{i + 1}</div>
+                                            <div
+                                                key={i}
+                                                className={`h-[1.25rem] leading-[1.25rem] w-full text-center ${error?.lineNumber === i + 1 ? 'bg-red-500/30 text-red-400' : ''}`}
+                                            >
+                                                {i + 1}
+                                            </div>
                                         ))}
                                     </div>
                                     <textarea
@@ -90,6 +99,15 @@ export const TurtleConsole: React.FC<TurtleConsoleProps> = ({ commands, onComman
                                     Roll
                                 </button>
                             </div>
+
+                            {error && (
+                                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                                    <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                                    <div className="text-xs text-red-700">
+                                        <span className="font-bold">Line {error.lineNumber}:</span> {error.message}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="p-4 bg-slate-50 border-t border-slate-200 shrink-0">

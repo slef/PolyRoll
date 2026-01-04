@@ -1,19 +1,20 @@
 import { Vector3, Quaternion } from 'three';
-import { ShapeType, PathSegment, TurtleState, TurtleCommand, EdgeCrossing } from '../types';
+import { ShapeType, PathSegment, PathResult, TurtleState, TurtleCommand, EdgeCrossing } from '../types';
 import { getPolyhedron, FaceData } from '../polyhedra';
 
 export function parseCommands(text: string): TurtleCommand[] {
     const lines = text.split('\n');
     const cmds: TurtleCommand[] = [];
-    lines.forEach(line => {
+    lines.forEach((line, lineIdx) => {
         const parts = line.trim().toLowerCase().split(/\s+/);
         if (parts.length < 2) return;
         const cmd = parts[0];
         const val = parseFloat(parts[1]);
+        const lineNumber = lineIdx + 1; // 1-based
         if (cmd === 'start' && parts.length >= 3) {
-            cmds.push({ type: 'start', value: [parseFloat(parts[1]), parseFloat(parts[2])] });
+            cmds.push({ type: 'start', value: [parseFloat(parts[1]), parseFloat(parts[2])], lineNumber });
         } else if (['fd', 'bk', 'lt', 'rt'].includes(cmd)) {
-            cmds.push({ type: cmd as any, value: isNaN(val) ? 0 : val });
+            cmds.push({ type: cmd as any, value: isNaN(val) ? 0 : val, lineNumber });
         }
     });
     return cmds;
@@ -23,7 +24,50 @@ function offsetPoint(pos: Vector3, face: FaceData): Vector3 {
     return pos.clone().add(face.normal.clone().multiplyScalar(0.015));
 }
 
-export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathSegment[] {
+/**
+ * Find the adjacent face across a given edge.
+ */
+function getAdjacentFace(
+    faces: FaceData[],
+    currentFace: FaceData,
+    edgeV1: Vector3,
+    edgeV2: Vector3
+): FaceData | null {
+    return faces.find(f =>
+        f.index !== currentFace.index &&
+        f.vertices.some(v => v.distanceTo(edgeV1) < 0.01) &&
+        f.vertices.some(v => v.distanceTo(edgeV2) < 0.01)
+    ) || null;
+}
+
+/**
+ * Cross an edge from one face to another.
+ * Updates heading via rotation and returns the new face.
+ */
+function crossEdge(
+    state: TurtleState,
+    fromFace: FaceData,
+    toFace: FaceData,
+    edgeV1: Vector3,
+    edgeV2: Vector3
+): void {
+    const edgeAxis = edgeV2.clone().sub(edgeV1).normalize();
+    const angle = fromFace.normal.angleTo(toFace.normal);
+    const cross = new Vector3().crossVectors(fromFace.normal, toFace.normal);
+    const rotationSign = cross.dot(edgeAxis) > 0 ? 1 : -1;
+    const rotation = new Quaternion().setFromAxisAngle(edgeAxis, angle * rotationSign);
+
+    state.heading.applyQuaternion(rotation);
+    state.faceIndex = toFace.index;
+
+    // Nudge position slightly into the new face
+    const inwards = new Vector3().crossVectors(toFace.normal, edgeAxis).normalize();
+    const toCenter = toFace.center.clone().sub(state.pos);
+    if (inwards.dot(toCenter) < 0) inwards.negate();
+    state.pos.add(inwards.multiplyScalar(0.001));
+}
+
+export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathResult {
     const definition = getPolyhedron(shape);
     const faces = definition.getFaces();
 
@@ -31,34 +75,37 @@ export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathS
     const startFace = faces.find((f: FaceData) => f.index === 1);
 
     if (!startFace) {
-        return [];
+        return { segments: [] };
     }
-    
+
     // Initial Heading: Point towards the midpoint of the first edge.
     // With atan2 sorting, edge 0 is consistent and aligns with lattice for cubes.
     const midPointFirstEdge = new Vector3().addVectors(startFace.vertices[0], startFace.vertices[1]).multiplyScalar(0.5);
     const initialHeading = new Vector3().subVectors(midPointFirstEdge, startFace.center).normalize();
-    
-    let state: TurtleState = { 
-        faceIndex: startFace.index, 
-        pos: startFace.center.clone(), 
-        heading: initialHeading.clone() 
+
+    let state: TurtleState = {
+        faceIndex: startFace.index,
+        pos: startFace.center.clone(),
+        heading: initialHeading.clone()
     };
 
     const segments: PathSegment[] = [];
     let currentPath: Vector3[] = [offsetPoint(state.pos, startFace)];
+    let error: PathResult['error'] = undefined;
 
-    commands.forEach(cmd => {
+    for (let cmdIndex = 0; cmdIndex < commands.length; cmdIndex++) {
+        const cmd = commands[cmdIndex];
+
         if (cmd.type === 'start') {
             const [x, y] = cmd.value as [number, number];
             // 'start' resets to Face 1
             const f = startFace;
             const right = initialHeading.clone().cross(f.normal).normalize();
-            
+
             state.pos.copy(f.center).add(initialHeading.clone().multiplyScalar(x)).add(right.multiplyScalar(y));
             state.faceIndex = f.index;
             state.heading.copy(initialHeading);
-            
+
             if (currentPath.length > 1) segments.push({ points: [...currentPath] });
             currentPath = [offsetPoint(state.pos, f)];
         } else if (cmd.type === 'lt' || cmd.type === 'rt') {
@@ -68,20 +115,23 @@ export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathS
             if (f) state.heading.applyAxisAngle(f.normal, rotateAngle);
         } else if (cmd.type === 'fd' || cmd.type === 'bk') {
             const dist = cmd.type === 'fd' ? (cmd.value as number) : -(cmd.value as number);
-            moveTurtle(state, dist, faces, currentPath);
+            const moveError = moveTurtle(state, dist, faces, currentPath);
+            if (moveError) {
+                error = { message: moveError, lineNumber: cmd.lineNumber };
+                break; // Stop processing further commands
+            }
         }
-    });
+    }
 
     if (currentPath.length > 1) segments.push({ points: currentPath });
-    
-    return segments;
+
+    return { segments, error };
 }
 
-function moveTurtle(state: TurtleState, distance: number, faces: FaceData[], currentPath: Vector3[]) {
+function moveTurtle(state: TurtleState, distance: number, faces: FaceData[], currentPath: Vector3[]): string | null {
     let remaining = Math.abs(distance);
     const sign = Math.sign(distance);
 
-    // Safety counter to prevent infinite loops in corner cases
     let iterations = 0;
     const MAX_ITERATIONS = 100;
 
@@ -91,89 +141,100 @@ function moveTurtle(state: TurtleState, distance: number, faces: FaceData[], cur
         const f = faces.find(face => face.index === state.faceIndex);
         if (!f) break;
 
-        let bestT = Infinity;
-        let bestEdgeIndex = -1;
+        // Find closest vertex and edge intersections
+        const vertexHit = findVertexHit(f, state.pos, moveHeading);
+        const edgeHit = findEdgeHit(f, state.pos, moveHeading);
 
-        // Check intersection with all face edges
-        for (let i = 0; i < f.vertices.length; i++) {
-            const v1 = f.vertices[i];
-            const v2 = f.vertices[(i + 1) % f.vertices.length];
-            const edgeDir = v2.clone().sub(v1).normalize();
-            
-            // Normal to the edge, lying in the face plane, pointing OUTWARDS.
-            // Vertices are CCW, so Cross(Edge, Normal) points Outward.
-            const edgeOutNormal = new Vector3().crossVectors(edgeDir, f.normal).normalize();
-            
-            // We want to find t > 0 such that pos + t*heading is on the edge line
-            // Denominator is dot(heading, edgeNormal). If positive, we are moving towards the edge.
-            const denominator = moveHeading.dot(edgeOutNormal);
-            
-            if (denominator > 0.0001) {
-                // Plane equation: (p - v1) . edgeOutNormal = 0
-                // t = - (pos - v1) . edgeOutNormal / denominator
-                const distToPlane = state.pos.clone().sub(v1).dot(edgeOutNormal);
-                const t = -distToPlane / denominator;
-                
-                // Allow slightly negative t (precision tolerance) but prioritize smallest positive
-                if (t > -0.0001 && t < bestT) {
-                    bestT = t;
-                    bestEdgeIndex = i;
-                }
-            }
-        }
-
-        if (bestT < remaining) {
-            // Move to edge
-            state.pos.add(moveHeading.clone().multiplyScalar(bestT));
+        // VERTEX CROSSING: hit vertex before edge - stop the path
+        if (vertexHit && vertexHit.t <= (edgeHit?.t ?? Infinity) && vertexHit.t < remaining) {
+            // Move to vertex and stop
+            state.pos.add(moveHeading.clone().multiplyScalar(vertexHit.t));
             currentPath.push(offsetPoint(state.pos, f));
-            remaining -= bestT;
+            return 'Path reached a vertex';
+        }
+        // EDGE CROSSING: normal edge hit
+        else if (edgeHit && edgeHit.t < remaining) {
+            state.pos.add(moveHeading.clone().multiplyScalar(edgeHit.t));
+            currentPath.push(offsetPoint(state.pos, f));
+            remaining -= edgeHit.t;
 
-            const v1 = f.vertices[bestEdgeIndex];
-            const v2 = f.vertices[(bestEdgeIndex + 1) % f.vertices.length];
-            
-            // Find neighbor sharing this edge
-            const neighbor = faces.find(nf => 
-                nf.index !== f.index && 
-                nf.vertices.some(nv => nv.distanceTo(v1) < 0.01) && 
-                nf.vertices.some(nv => nv.distanceTo(v2) < 0.01)
-            );
+            const v1 = f.vertices[edgeHit.edgeIndex];
+            const v2 = f.vertices[(edgeHit.edgeIndex + 1) % f.vertices.length];
 
+            const neighbor = getAdjacentFace(faces, f, v1, v2);
             if (neighbor) {
-                // Calculate rotation to map heading to new face
-                const edgeAxis = v2.clone().sub(v1).normalize();
-                const angle = f.normal.angleTo(neighbor.normal);
-                
-                // Determine rotation sign using cross product
-                const cross = new Vector3().crossVectors(f.normal, neighbor.normal);
-                const rotationSign = cross.dot(edgeAxis) > 0 ? 1 : -1;
-                const rotation = new Quaternion().setFromAxisAngle(edgeAxis, angle * rotationSign);
-                
-                state.heading.applyQuaternion(rotation);
-                state.faceIndex = neighbor.index;
-
-                // Nudge position slightly into the new face to avoid getting stuck on the edge
-                // "Inwards" vector is perpendicular to edge, in the new face plane
-                const inwards = new Vector3().crossVectors(neighbor.normal, edgeAxis).normalize();
-                
-                // Ensure inwards points towards center
-                const toCenter = neighbor.center.clone().sub(state.pos);
-                if (inwards.dot(toCenter) < 0) inwards.negate();
-                
-                state.pos.add(inwards.multiplyScalar(0.001));
-                
-                // Add the start point on the new face
+                crossEdge(state, f, neighbor, v1, v2);
                 currentPath.push(offsetPoint(state.pos, neighbor));
             } else {
-                // No neighbor (should not happen for closed polyhedron)
-                remaining = 0;
+                return null;
             }
-        } else {
-            // Move freely within face
+        }
+        // No crossing - move freely within face
+        else {
             state.pos.add(moveHeading.clone().multiplyScalar(remaining));
             currentPath.push(offsetPoint(state.pos, f));
             remaining = 0;
         }
     }
+
+    return null;
+}
+
+/**
+ * Find the closest vertex hit along the movement path.
+ */
+function findVertexHit(
+    face: FaceData,
+    pos: Vector3,
+    heading: Vector3
+): { t: number; vertex: Vector3; index: number } | null {
+    const VERTEX_THRESHOLD = 0.05;
+    let best: { t: number; vertex: Vector3; index: number } | null = null;
+
+    for (let i = 0; i < face.vertices.length; i++) {
+        const vertex = face.vertices[i];
+        const toVertex = vertex.clone().sub(pos);
+        const projLen = toVertex.dot(heading);
+
+        if (projLen > 0) {
+            const closestPoint = pos.clone().add(heading.clone().multiplyScalar(projLen));
+            const dist = closestPoint.distanceTo(vertex);
+
+            if (dist < VERTEX_THRESHOLD && (!best || projLen < best.t)) {
+                best = { t: projLen, vertex, index: i };
+            }
+        }
+    }
+    return best;
+}
+
+/**
+ * Find the closest edge intersection along the movement path.
+ */
+function findEdgeHit(
+    face: FaceData,
+    pos: Vector3,
+    heading: Vector3
+): { t: number; edgeIndex: number } | null {
+    let best: { t: number; edgeIndex: number } | null = null;
+
+    for (let i = 0; i < face.vertices.length; i++) {
+        const v1 = face.vertices[i];
+        const v2 = face.vertices[(i + 1) % face.vertices.length];
+        const edgeDir = v2.clone().sub(v1).normalize();
+        const edgeOutNormal = new Vector3().crossVectors(edgeDir, face.normal).normalize();
+
+        const denominator = heading.dot(edgeOutNormal);
+        if (denominator > 0.0001) {
+            const distToPlane = pos.clone().sub(v1).dot(edgeOutNormal);
+            const t = -distToPlane / denominator;
+
+            if (t > -0.0001 && (!best || t < best.t)) {
+                best = { t, edgeIndex: i };
+            }
+        }
+    }
+    return best;
 }
 
 export function extractEdgeCrossings(shape: ShapeType, segments: PathSegment[]): EdgeCrossing[] {

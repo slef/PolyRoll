@@ -32,6 +32,14 @@ export interface PathSegment {
   points: Vector3[]; // 3D local points relative to polyhedron center
 }
 
+export interface PathResult {
+  segments: PathSegment[];
+  error?: {
+    message: string;
+    lineNumber: number; // 1-based line number in source
+  };
+}
+
 export interface TurtleState {
   faceIndex: number;
   pos: Vector3;
@@ -41,6 +49,7 @@ export interface TurtleState {
 export interface TurtleCommand {
   type: 'start' | 'fd' | 'bk' | 'lt' | 'rt';
   value: number | [number, number];
+  lineNumber: number; // 1-based line number in source
 }
 
 export interface EdgeCrossing {

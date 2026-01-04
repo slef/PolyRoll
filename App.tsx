@@ -5,7 +5,7 @@ import { Simulation } from './components/Simulation';
 import { Floor } from './components/Floor';
 import { TurtleConsole } from './components/TurtleConsole';
 import { Info, Rotate3d, Target, History, ChevronRight } from 'lucide-react';
-import { HistoryStep, ShapeType, PathSegment, EdgeCrossing } from './types';
+import { HistoryStep, ShapeType, PathSegment, PathResult, EdgeCrossing } from './types';
 import { Vector3, Quaternion } from 'three';
 import { parseCommands, generatePath, generateFlatPath, extractEdgeCrossings } from './utils/turtle';
 import { getPolyhedron } from './polyhedra';
@@ -16,6 +16,7 @@ export default function App() {
   const [pathSegments, setPathSegments] = useState<PathSegment[]>([]);
   const [flatPathSegments, setFlatPathSegments] = useState<PathSegment[]>([]);
   const [rollAnimationCrossings, setRollAnimationCrossings] = useState<EdgeCrossing[]>([]);
+  const [pathError, setPathError] = useState<PathResult['error']>(undefined);
 
   const getFaceOrientation = useCallback((quat: Quaternion, faceIndex: number, shape: ShapeType, initialCalibrationAngle?: number): {label: string, rawAngle: number} => {
     const definition = getPolyhedron(shape);
@@ -106,10 +107,11 @@ export default function App() {
 
   const handleRunCommands = () => {
       const parsed = parseCommands(turtleCommands);
-      const segments = generatePath(currentShape, parsed);
+      const result = generatePath(currentShape, parsed);
       const flatSegments = generateFlatPath(currentShape, parsed);
-      setPathSegments(segments);
+      setPathSegments(result.segments);
       setFlatPathSegments(flatSegments);
+      setPathError(result.error);
   };
 
   const handleRollAnimation = () => {
@@ -120,15 +122,16 @@ export default function App() {
 
       // Parse commands and generate path
       const parsed = parseCommands(turtleCommands);
-      const segments = generatePath(currentShape, parsed);
+      const result = generatePath(currentShape, parsed);
       const flatSegments = generateFlatPath(currentShape, parsed);
 
       // Set the full paths (Simulation will progressively reveal them)
-      setPathSegments(segments);
+      setPathSegments(result.segments);
       setFlatPathSegments(flatSegments);
+      setPathError(result.error);
 
       // Extract edge crossings from the path
-      const crossings = extractEdgeCrossings(currentShape, segments);
+      const crossings = extractEdgeCrossings(currentShape, result.segments);
 
       // Trigger the roll animation
       setRollAnimationCrossings(crossings);
@@ -192,6 +195,7 @@ export default function App() {
         onCommandsChange={setTurtleCommands}
         onRun={handleRunCommands}
         onRoll={handleRollAnimation}
+        error={pathError}
       />
 
       <div className="absolute inset-0 z-0">
