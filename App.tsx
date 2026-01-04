@@ -72,8 +72,14 @@ export default function App() {
       setCurrentStepIndex(0);
       setPathSegments([]);
       setFlatPathSegments([]);
+      setPathError(undefined);
   };
-  
+
+  const handleCommandsChange = (newCommands: string) => {
+      setTurtleCommands(newCommands);
+      setPathError(undefined);
+  };
+
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const currentStep = history[currentStepIndex];
   const historyRef = useRef<HTMLDivElement>(null);
@@ -192,7 +198,7 @@ export default function App() {
 
       <TurtleConsole
         commands={turtleCommands}
-        onCommandsChange={setTurtleCommands}
+        onCommandsChange={handleCommandsChange}
         onRun={handleRunCommands}
         onRoll={handleRollAnimation}
         error={pathError}
