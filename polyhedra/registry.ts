@@ -4,12 +4,16 @@ import { octahedron } from './octahedron';
 import { cube } from './cube';
 import { icosahedron } from './icosahedron';
 import { tetrahedron } from './tetrahedron';
+import { dcTriangle, dcSquare, dcHexagon } from './doublyCoveredKGon';
 
 export const POLYHEDRA: Record<ShapeType, PolyhedronDefinition> = {
   octahedron,
   cube,
   icosahedron,
   tetrahedron,
+  dcTriangle,
+  dcSquare,
+  dcHexagon,
 };
 
 export function getPolyhedron(shape: ShapeType): PolyhedronDefinition {

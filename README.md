@@ -1,6 +1,6 @@
 # PolyRoll
 
-A 3D interactive simulation of polyhedra rolling on geometric surfaces. Roll octahedra, icosahedra, and cubes across triangular or square grids, visualize turtle graphics paths, and explore the mathematics of polyhedral geometry.
+A 3D interactive simulation of polyhedra rolling on geometric surfaces. Roll various polyhedra (including degenerate forms) across triangular, square, or hexagonal grids, visualize turtle graphics paths, and explore the mathematics of polyhedral geometry.
 
 **🌐 [Live Demo](https://slef.github.io/PolyRoll/)**
 
@@ -10,7 +10,7 @@ A 3D interactive simulation of polyhedra rolling on geometric surfaces. Roll oct
 
 ## Features
 
-- **Multiple Polyhedra**: Switch between octahedron, icosahedron, and cube
+- **Multiple Polyhedra**: Switch between octahedron, cube, icosahedron, tetrahedron, and doubly covered polygons
 - **Interactive Rolling**: Click highlighted zones to roll the polyhedron along edges
 - **Turtle Graphics**: Draw paths on the polyhedron surface using turtle commands
 - **Real-time Tracking**: Monitor current face, position coordinates, and orientation

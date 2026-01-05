@@ -277,7 +277,7 @@ export const Simulation: React.FC<SimulationProps> = ({
             />
         ))}
         {!isRolling && !isRollAnimating && targets.map((target, i) => (
-            <InteractionZone key={i} target={target} isSquare={definition.latticeType === 'square'} onClick={() => handleRoll(target)} />
+            <InteractionZone key={i} target={target} latticeType={definition.latticeType} onClick={() => handleRoll(target)} />
         ))}
     </group>
   );
@@ -285,16 +285,18 @@ export const Simulation: React.FC<SimulationProps> = ({
 
 // Unified PolyhedronMesh component
 const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ definition }) => {
+  // Compute faces for both geometry and labels
+  const faces = useMemo(() => definition.getFaces(), [definition]);
+
   const geometry = useMemo(() => {
     const pos: number[] = [];
     const col: number[] = [];
-    const faces = definition.getFaces();
 
     faces.forEach((face) => {
       const faceColor = new Color(definition.getFaceColor(face.index - 1));
       const verts = face.vertices;
 
-      // Triangulate: split into triangles
+      // Triangulate: split into triangles using fan triangulation
       if (verts.length === 3) {
         // Already a triangle
         verts.forEach((v) => {
@@ -310,6 +312,17 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
             col.push(faceColor.r, faceColor.g, faceColor.b);
           }
         });
+      } else {
+        // N-gon (n > 4): fan triangulation from vertex 0
+        // Creates triangles: (0,1,2), (0,2,3), (0,3,4), ..., (0,n-2,n-1)
+        for (let i = 1; i < verts.length - 1; i++) {
+          pos.push(verts[0].x, verts[0].y, verts[0].z);
+          col.push(faceColor.r, faceColor.g, faceColor.b);
+          pos.push(verts[i].x, verts[i].y, verts[i].z);
+          col.push(faceColor.r, faceColor.g, faceColor.b);
+          pos.push(verts[i + 1].x, verts[i + 1].y, verts[i + 1].z);
+          col.push(faceColor.r, faceColor.g, faceColor.b);
+        }
       }
     });
 
@@ -317,7 +330,7 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
     geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
     return geom;
-  }, [definition]);
+  }, [faces, definition]);
 
   // Get yellow points for cube (if available)
   const yellowPoints = definition.getYellowPoints?.() || [];
@@ -346,9 +359,10 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
       ))}
 
       {/* Face labels */}
-      {definition.faceCenters.map((vec, i) => {
-        const normal = vec.clone().normalize();
-        const pos = normal.clone().multiplyScalar(definition.inradius * 1.01);
+      {faces.map((face, i) => {
+        const normal = face.normal.clone().normalize();
+        // Position label slightly beyond face center along normal
+        const pos = face.center.clone().add(normal.clone().multiplyScalar(0.01));
         const quaternion = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), normal);
         return (
           <group key={i} position={pos} quaternion={quaternion}>
@@ -360,7 +374,7 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
               outlineWidth={definition.faceLabelSize === 0.2 ? 0.015 : 0.02}
               outlineColor="#000000"
             >
-              {i + 1}
+              {face.index}
             </Text>
           </group>
         );
@@ -369,20 +383,22 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
   );
 };
 
-const InteractionZone: React.FC<{ target: RollTarget; isSquare: boolean; onClick: () => void }> = ({ target, isSquare, onClick }) => {
+const InteractionZone: React.FC<{ target: RollTarget; latticeType: 'square' | 'triangular' | 'hexagonal'; onClick: () => void }> = ({ target, latticeType, onClick }) => {
     const [hovered, setHover] = useState(false);
     useCursor(hovered);
 
     return (
         <group position={target.targetCenter}>
-            <mesh 
-                rotation={[-Math.PI / 2, 0, isSquare ? target.directionAngle : target.directionAngle + Math.PI]} 
+            <mesh
+                rotation={[-Math.PI / 2, 0, latticeType === 'square' ? target.directionAngle : target.directionAngle + Math.PI]}
                 onClick={(e) => { e.stopPropagation(); onClick(); }}
                 onPointerOver={() => setHover(true)}
                 onPointerOut={() => setHover(false)}
             >
-                {isSquare ? (
+                {latticeType === 'square' ? (
                     <planeGeometry args={[EDGE_LENGTH * 0.95, EDGE_LENGTH * 0.95]} />
+                ) : latticeType === 'hexagonal' ? (
+                    <circleGeometry args={[EDGE_LENGTH * 0.95, 6]} />
                 ) : (
                     <circleGeometry args={[(TRIANGLE_SIDE / Math.sqrt(3)) * 0.95, 3]} />
                 )}

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PolyRoll is a 3D interactive simulation for rolling polyhedra (octahedron, icosahedron, cube) on geometric surfaces. It features turtle graphics that can draw paths on polyhedral surfaces with automatic face-to-face traversal.
+PolyRoll is a 3D interactive simulation for rolling polyhedra (octahedron, cube, icosahedron, tetrahedron, and doubly covered polygons) on geometric surfaces (triangular, square, hexagonal lattices). It features turtle graphics that can draw paths on polyhedral surfaces with automatic face-to-face traversal.
 
 ## Development Commands
 
@@ -31,13 +31,13 @@ The codebase uses a **configuration-based architecture** where each polyhedron i
 **Key components:**
 - **[polyhedra/PolyhedronDefinition.ts](polyhedra/PolyhedronDefinition.ts)**: Core interface defining all polyhedron properties and methods
 - **[polyhedra/registry.ts](polyhedra/registry.ts)**: Central registry with `getPolyhedron(shape)` function
-- **Individual definitions**: [octahedron.ts](polyhedra/octahedron.ts), [cube.ts](polyhedra/cube.ts), [icosahedron.ts](polyhedra/icosahedron.ts)
+- **Individual definitions**: [octahedron.ts](polyhedra/octahedron.ts), [cube.ts](polyhedra/cube.ts), [icosahedron.ts](polyhedra/icosahedron.ts), [tetrahedron.ts](polyhedra/tetrahedron.ts), [doublyCoveredKGon.ts](polyhedra/doublyCoveredKGon.ts)
 
 **PolyhedronDefinition interface includes:**
 - Geometry: `vertices`, `faceCenters`, `inradius`, `rollAngle`, `edgeLength`
 - Visual styling: `facePalette`, `faceLabelSize`, `vertexSphereRadius`
 - Initial state: `initialPosition`, `initialQuaternion`
-- Lattice config: `latticeType` ('square' | 'triangular'), `movementSectors`, `sectorAngle`
+- Lattice config: `latticeType` ('square' | 'triangular' | 'hexagonal'), `movementSectors`, `sectorAngle`
 - Methods for rendering: `getVertices()`, `getFaces()`, `getVertexColor()`, `getFaceColor()`
 - Methods for movement: `getMoveData()`, `getOrientationLabel()`
 - Methods for floor: `getLatticeVertexColor()`

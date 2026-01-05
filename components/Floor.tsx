@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { TRIANGLE_SIDE, EDGE_LENGTH, GRID_COLOR_1, GRID_COLOR_2 } from '../constants';
+import { TRIANGLE_SIDE, EDGE_LENGTH, GRID_COLOR_1, GRID_COLOR_2, VERTEX_COLORS } from '../constants';
 import { Color, DoubleSide, InstancedMesh, Object3D } from 'three';
 import { ShapeType } from '../types';
 import { getPolyhedron } from '../polyhedra';
@@ -14,7 +14,9 @@ export const Floor: React.FC<FloorProps> = ({ shape }) => {
 
   return (
     <group position={[0, -0.005, 0]}>
-        {latticeType === 'square' ? <SquareFloorMesh /> : <TriangularFloorMesh />}
+        {latticeType === 'square' ? <SquareFloorMesh /> :
+         latticeType === 'triangular' ? <TriangularFloorMesh /> :
+         <HexagonalFloorMesh />}
         <LatticeVertices shape={shape} />
         <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.01, 0]}>
             <ringGeometry args={[0.1, 0.15, 32]} />
@@ -49,7 +51,7 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
                     colArray.push(c.r, c.g, c.b);
                 }
             }
-        } else {
+        } else if (definition.latticeType === 'triangular') {
             const side = TRIANGLE_SIDE;
             const height = side * Math.sqrt(3) / 2;
             const rows = 12, cols = 12;
@@ -71,6 +73,37 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
                     addPoint(xBase - side/2, zBase + (1/3) * height);
                 }
             }
+            uniquePoints.forEach(pt => {
+                posArray.push(pt.x, 0.005, pt.z);
+                const colorHex = definition.getLatticeVertexColor(pt.i, pt.j);
+                const c = new Color(colorHex);
+                colArray.push(c.r, c.g, c.b);
+            });
+        } else if (definition.latticeType === 'hexagonal') {
+            const size = EDGE_LENGTH;
+            const hexRadius = size;
+            const rows = 8, cols = 8;
+            const uniquePoints = new Map<string, {x: number, z: number, i: number, j: number}>();
+
+            for (let row = -rows; row <= rows; row++) {
+                for (let col = -cols; col <= cols; col++) {
+                    const cx = size * Math.sqrt(3) * (col + row / 2);
+                    const cz = size * (3 / 2) * row;
+
+                    // Add all 6 vertices of this hexagon
+                    for (let k = 0; k < 6; k++) {
+                        const angle = Math.PI / 6 + (Math.PI / 3) * k;
+                        const vx = cx + hexRadius * Math.cos(angle);
+                        const vz = cz + hexRadius * Math.sin(angle);
+
+                        const key = `${vx.toFixed(4)},${vz.toFixed(4)}`;
+                        if (!uniquePoints.has(key)) {
+                            uniquePoints.set(key, {x: vx, z: vz, i: col, j: row});
+                        }
+                    }
+                }
+            }
+
             uniquePoints.forEach(pt => {
                 posArray.push(pt.x, 0.005, pt.z);
                 const colorHex = definition.getLatticeVertexColor(pt.i, pt.j);
@@ -146,14 +179,14 @@ const SquareFloorMesh = () => {
 const TriangularFloorMesh = () => {
     const { positions, colors, normals } = useMemo(() => {
         const posArray = [], colArray = [];
-        const side = TRIANGLE_SIDE, height = side * Math.sqrt(3) / 2; 
+        const side = TRIANGLE_SIDE, height = side * Math.sqrt(3) / 2;
         const rows = 12, cols = 12;
         const color1 = new Color(GRID_COLOR_1), color2 = new Color(GRID_COLOR_2);
         for (let r = -rows; r <= rows; r++) {
             for (let c = -cols; c <= cols; c++) {
                 const zBase = r * height, xBase = c * side + (Math.abs(r) % 2 === 1 ? side / 2 : 0);
                 const cx = xBase, cz = zBase;
-                const v1x = cx, v1z = cz - (2/3) * height, v2x = cx + side/2, v2z = cz + (1/3) * height, v3x = cx - side/2, v3z = cz + (1/3) * height; 
+                const v1x = cx, v1z = cz - (2/3) * height, v2x = cx + side/2, v2z = cz + (1/3) * height, v3x = cx - side/2, v3z = cz + (1/3) * height;
                 posArray.push(v1x, 0, v1z, v2x, 0, v2z, v3x, 0, v3z);
                 colArray.push(color1.r, color1.g, color1.b, color1.r, color1.g, color1.b, color1.r, color1.g, color1.b);
                 const pfx1 = v3x, pfz1 = v3z, pfx2 = v2x, pfz2 = v2z, pfx3 = cx, pfz3 = v2z + height;
@@ -165,6 +198,73 @@ const TriangularFloorMesh = () => {
         for(let i=0; i<normArray.length; i+=3) { normArray[i] = 0; normArray[i+1] = 1; normArray[i+2] = 0; }
         return { positions: new Float32Array(posArray), colors: new Float32Array(colArray), normals: normArray };
     }, []);
+    return (
+        <mesh receiveShadow frustumCulled={false}>
+            <bufferGeometry>
+                <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
+                <bufferAttribute attach="attributes-color" count={colors.length / 3} array={colors} itemSize={3} />
+                <bufferAttribute attach="attributes-normal" count={normals.length / 3} array={normals} itemSize={3} />
+            </bufferGeometry>
+            <meshStandardMaterial vertexColors roughness={0.8} metalness={0.0} side={DoubleSide} />
+        </mesh>
+    );
+};
+
+const HexagonalFloorMesh = () => {
+    const { positions, colors, normals } = useMemo(() => {
+        const posArray = [], colArray = [];
+        const size = EDGE_LENGTH;
+        const hexRadius = size;
+        const rows = 8, cols = 8;
+        const color1 = new Color(GRID_COLOR_1);
+        const color2 = new Color(GRID_COLOR_2);
+        const color3 = new Color(VERTEX_COLORS[2]); // Blue for 3rd color
+
+        for (let row = -rows; row <= rows; row++) {
+            for (let col = -cols; col <= cols; col++) {
+                // Hexagon center in world space
+                const cx = size * Math.sqrt(3) * (col + row / 2);
+                const cz = size * (3 / 2) * row;
+
+                // Choose color based on 3-coloring formula
+                const colorIdx = (((col - row) % 3) + 3) % 3;
+                const color = [color1, color2, color3][colorIdx];
+
+                // Generate 6 triangular faces for this hexagon
+                for (let k = 0; k < 6; k++) {
+                    const angle1 = Math.PI / 6 + (Math.PI / 3) * k;
+                    const angle2 = Math.PI / 6 + (Math.PI / 3) * ((k + 1) % 6);
+
+                    const v1x = cx + hexRadius * Math.cos(angle1);
+                    const v1z = cz + hexRadius * Math.sin(angle1);
+                    const v2x = cx + hexRadius * Math.cos(angle2);
+                    const v2z = cz + hexRadius * Math.sin(angle2);
+
+                    // Triangle: center, v1, v2
+                    posArray.push(cx, 0, cz, v1x, 0, v1z, v2x, 0, v2z);
+
+                    // All 3 vertices of triangle get same color
+                    for (let m = 0; m < 3; m++) {
+                        colArray.push(color.r, color.g, color.b);
+                    }
+                }
+            }
+        }
+
+        const normArray = new Float32Array(posArray.length);
+        for (let i = 0; i < normArray.length; i += 3) {
+            normArray[i] = 0;
+            normArray[i + 1] = 1;
+            normArray[i + 2] = 0;
+        }
+
+        return {
+            positions: new Float32Array(posArray),
+            colors: new Float32Array(colArray),
+            normals: normArray
+        };
+    }, []);
+
     return (
         <mesh receiveShadow frustumCulled={false}>
             <bufferGeometry>

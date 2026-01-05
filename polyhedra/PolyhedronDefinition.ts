@@ -38,9 +38,9 @@ export interface PolyhedronDefinition {
   initialQuaternion: Quaternion;
 
   // Lattice configuration
-  latticeType: 'square' | 'triangular';
-  movementSectors: number;       // 4 for square, 6 for triangular
-  sectorAngle: number;           // π/2 for square, π/3 for triangular
+  latticeType: 'square' | 'triangular' | 'hexagonal';
+  movementSectors: number;       // 4 for square, 6 for triangular, 3/4/6 for doubly covered
+  sectorAngle: number;           // π/2 for square, π/3 for triangular, 2π/k for doubly covered
 
   // Methods - Core geometry
   getVertices(): Vector3[];

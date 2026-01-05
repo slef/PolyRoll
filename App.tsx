@@ -54,14 +54,30 @@ export default function App() {
   };
 
   const [history, setHistory] = useState<HistoryStep[]>(() => createInitialHistory('octahedron'));
-  const [calibAngles] = useState<{octahedron: number, icosahedron: number, cube: number}>(() => {
+  const [calibAngles] = useState<Record<ShapeType, number>>(() => {
       const octDef = getPolyhedron('octahedron');
       const icoDef = getPolyhedron('icosahedron');
       const cubeDef = getPolyhedron('cube');
+      const tetDef = getPolyhedron('tetrahedron');
+      const dcTriDef = getPolyhedron('dcTriangle');
+      const dcSqDef = getPolyhedron('dcSquare');
+      const dcHexDef = getPolyhedron('dcHexagon');
       const oct = getFaceOrientation(octDef.initialQuaternion, 1, 'octahedron');
       const ico = getFaceOrientation(icoDef.initialQuaternion, 1, 'icosahedron');
       const cub = getFaceOrientation(cubeDef.initialQuaternion, 1, 'cube');
-      return { octahedron: oct.rawAngle, icosahedron: ico.rawAngle, cube: cub.rawAngle };
+      const tet = getFaceOrientation(tetDef.initialQuaternion, 1, 'tetrahedron');
+      const dcTri = getFaceOrientation(dcTriDef.initialQuaternion, 1, 'dcTriangle');
+      const dcSq = getFaceOrientation(dcSqDef.initialQuaternion, 1, 'dcSquare');
+      const dcHex = getFaceOrientation(dcHexDef.initialQuaternion, 1, 'dcHexagon');
+      return {
+        octahedron: oct.rawAngle,
+        icosahedron: ico.rawAngle,
+        cube: cub.rawAngle,
+        tetrahedron: tet.rawAngle,
+        dcTriangle: dcTri.rawAngle,
+        dcSquare: dcSq.rawAngle,
+        dcHexagon: dcHex.rawAngle
+      };
   });
 
   const changeShape = (shape: ShapeType) => {
@@ -156,14 +172,25 @@ export default function App() {
                 <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                     <Rotate3d className="text-indigo-600" /> PolyRoll
                 </h1>
-                <div className="flex bg-slate-100 rounded-lg p-1 mt-3 gap-1">
-                    {(['tetrahedron', 'cube', 'octahedron', 'icosahedron'] as ShapeType[]).map(s => (
-                        <button key={s} onClick={() => changeShape(s)}
-                            className={`flex-1 px-3 py-1.5 rounded-md text-sm font-semibold transition-all capitalize ${currentShape === s ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            {s}
-                        </button>
-                    ))}
+                <div className="flex flex-col gap-2 mt-3">
+                    <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
+                        {(['tetrahedron', 'cube', 'octahedron', 'icosahedron'] as ShapeType[]).map(s => (
+                            <button key={s} onClick={() => changeShape(s)}
+                                className={`flex-1 px-3 py-1.5 rounded-md text-sm font-semibold transition-all capitalize ${currentShape === s ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                {s}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
+                        {(['dcTriangle', 'dcSquare', 'dcHexagon'] as ShapeType[]).map(s => (
+                            <button key={s} onClick={() => changeShape(s)}
+                                className={`flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-all ${currentShape === s ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                {s === 'dcTriangle' ? 'DC △' : s === 'dcSquare' ? 'DC □' : 'DC ⬡'}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
             <div className="flex gap-2">
