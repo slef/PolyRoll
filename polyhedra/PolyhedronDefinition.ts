@@ -58,4 +58,13 @@ export interface PolyhedronDefinition {
   // Methods - Orientation and movement
   getOrientationLabel(deltaAngle: number): string;  // X, Y, or Z
   getMoveData(angle: number): { label: string; delta: { u: number; v: number } };
+
+  // Methods - Interaction zones (for highlighting rollable targets)
+  // Optional: Custom interaction zone calculation
+  // If not provided, uses generic algorithm: find adjacent face and project to ground
+  getInteractionZoneVertices?(bottomVertexIndices: number[]): Vector3[];
+
+  // Helper method to find which face shares a given edge (pair of vertex indices)
+  // Returns the face index (0-based) or -1 if not found
+  findAdjacentFace?(vertexIndex1: number, vertexIndex2: number, excludeFaceIndex: number): number;
 }

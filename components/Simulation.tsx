@@ -91,47 +91,87 @@ export const Simulation: React.FC<SimulationProps> = ({
 
   const updateTargets = (pos: Vector3, quat: Quaternion) => {
     const matrix = new Matrix4().compose(pos, quat, new Vector3(1, 1, 1));
-    const localVertices = definition.getVertices();
+    const faces = definition.getFaces();
 
-    const worldVertices = localVertices.map(v => v.clone().applyMatrix4(matrix));
-    const sorted = [...worldVertices].map((v, i) => ({ v, i })).sort((a, b) => a.v.y - b.v.y);
-    const groundCount = definition.getBottomVertexCount();
-    const bottomVertices = sorted.slice(0, groundCount).map(item => item.v);
+    // Transform all faces to world space
+    const worldFaces = faces.map(face => ({
+      ...face,
+      center: face.center.clone().applyMatrix4(matrix),
+      normal: face.normal.clone().applyQuaternion(quat),
+      vertices: face.vertices.map(v => v.clone().applyMatrix4(matrix))
+    }));
+
+    // Find the bottom face (face with normal pointing most downward)
+    let bottomFaceIndex = 0;
+    let bestDot = -1;
+    worldFaces.forEach((face, idx) => {
+      const dot = face.normal.dot(new Vector3(0, -1, 0));
+      if (dot > bestDot) {
+        bestDot = dot;
+        bottomFaceIndex = idx;
+      }
+    });
+
+    const bottomFace = worldFaces[bottomFaceIndex];
+    const bottomFaceVertexCount = bottomFace.vertices.length;
 
     const newTargets: RollTarget[] = [];
-    const edges: {start: Vector3, end: Vector3}[] = [];
 
-    if (groundCount === 4) {
-        // Cube: 4 bottom vertices
-        for(let i=0; i<4; i++) {
-            for(let j=i+1; j<4; j++) {
-                if(bottomVertices[i].distanceTo(bottomVertices[j]) < EDGE_LENGTH * 1.05) {
-                    edges.push({start: bottomVertices[i], end: bottomVertices[j]});
-                }
-            }
+    // For each edge of the bottom face, find the adjacent face and create interaction zone
+    for (let i = 0; i < bottomFaceVertexCount; i++) {
+      const nextI = (i + 1) % bottomFaceVertexCount;
+      const edgeV1 = bottomFace.vertices[i];
+      const edgeV2 = bottomFace.vertices[nextI];
+
+      // Find which face shares this edge (excluding the bottom face)
+      let adjacentFace = null;
+      for (const face of worldFaces) {
+        if (face.index === bottomFace.index) continue;
+
+        // Check if this face contains both edge vertices
+        let hasV1 = false, hasV2 = false;
+        for (const fv of face.vertices) {
+          if (fv.distanceTo(edgeV1) < 0.001) hasV1 = true;
+          if (fv.distanceTo(edgeV2) < 0.001) hasV2 = true;
         }
-    } else {
-        // Triangular base (octahedron, icosahedron): 3 bottom vertices
-        edges.push({ start: bottomVertices[0], end: bottomVertices[1] });
-        edges.push({ start: bottomVertices[1], end: bottomVertices[2] });
-        edges.push({ start: bottomVertices[2], end: bottomVertices[0] });
-    }
+        if (hasV1 && hasV2) {
+          adjacentFace = face;
+          break;
+        }
+      }
 
-    edges.forEach((edge) => {
-        const pivot = new Vector3().addVectors(edge.start, edge.end).multiplyScalar(0.5);
-        const currentFloorCenter = new Vector3(pos.x, 0, pos.z);
-        const toPivot = new Vector3().subVectors(pivot, currentFloorCenter); 
-        const rollDirection = toPivot.clone().normalize();
-        const axis = new Vector3(0, 1, 0).cross(rollDirection).normalize();
-        const targetCenter = new Vector3().addVectors(currentFloorCenter, toPivot.clone().multiplyScalar(2));
-        
-        newTargets.push({
-            axis,
-            point: pivot,
-            targetCenter,
-            directionAngle: Math.atan2(toPivot.z, toPivot.x)
-        });
-    });
+      if (!adjacentFace) continue;
+
+      // Calculate roll parameters
+      const pivot = new Vector3().addVectors(edgeV1, edgeV2).multiplyScalar(0.5);
+      const currentFloorCenter = new Vector3(pos.x, 0, pos.z);
+      const toPivot = new Vector3().subVectors(pivot, currentFloorCenter);
+      const rollDirection = toPivot.clone().normalize();
+      const axis = new Vector3(0, 1, 0).cross(rollDirection).normalize();
+
+      // Create interaction zone: project adjacent face vertices to ground after roll
+      const rollAngle = definition.rollAngle;
+      const rollQuat = new Quaternion().setFromAxisAngle(axis, rollAngle);
+
+      const zoneVertices: Vector3[] = adjacentFace.vertices.map(v => {
+        // Rotate vertex around pivot by roll angle
+        const relative = v.clone().sub(pivot);
+        relative.applyQuaternion(rollQuat);
+        const rotated = relative.add(pivot);
+        // Project to ground
+        return new Vector3(rotated.x, 0, rotated.z);
+      });
+
+      const targetCenter = new Vector3().addVectors(currentFloorCenter, toPivot.clone().multiplyScalar(2));
+
+      newTargets.push({
+        axis,
+        point: pivot,
+        targetCenter,
+        directionAngle: Math.atan2(toPivot.z, toPivot.x),
+        zoneVertices
+      });
+    }
 
     setTargets(newTargets);
   };
@@ -292,9 +332,20 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
     const pos: number[] = [];
     const col: number[] = [];
 
+    // Detect doubly covered polygons (2 faces with opposite normals at same location)
+    const isDoublyCovered = definition.faceCount === 2 &&
+                            Math.abs(definition.dihedralAngle) < 0.01;
+    const VISUAL_OFFSET = 0.002;
+
     faces.forEach((face) => {
       const faceColor = new Color(definition.getFaceColor(face.index - 1));
-      const verts = face.vertices;
+      let verts = face.vertices;
+
+      // Apply visual offset for doubly covered polygons to prevent z-fighting
+      if (isDoublyCovered) {
+        const offset = face.index === 1 ? -VISUAL_OFFSET : VISUAL_OFFSET;
+        verts = verts.map(v => new Vector3(v.x, v.y + offset, v.z));
+      }
 
       // Triangulate: split into triangles using fan triangulation
       if (verts.length === 3) {
@@ -361,8 +412,18 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
       {/* Face labels */}
       {faces.map((face, i) => {
         const normal = face.normal.clone().normalize();
+
+        // Apply visual offset for doubly covered polygons
+        const isDoublyCovered = definition.faceCount === 2 && Math.abs(definition.dihedralAngle) < 0.01;
+        const VISUAL_OFFSET = 0.002;
+        let center = face.center.clone();
+        if (isDoublyCovered) {
+          const offset = face.index === 1 ? -VISUAL_OFFSET : VISUAL_OFFSET;
+          center.y += offset;
+        }
+
         // Position label slightly beyond face center along normal
-        const pos = face.center.clone().add(normal.clone().multiplyScalar(0.01));
+        const pos = center.add(normal.clone().multiplyScalar(0.01));
         const quaternion = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), normal);
         return (
           <group key={i} position={pos} quaternion={quaternion}>
@@ -387,6 +448,45 @@ const InteractionZone: React.FC<{ target: RollTarget; latticeType: 'square' | 't
     const [hovered, setHover] = useState(false);
     useCursor(hovered);
 
+    // If custom zone vertices are provided, use them to create a custom shape
+    const customGeometry = useMemo(() => {
+        if (!target.zoneVertices || target.zoneVertices.length < 3) return null;
+
+        const shape = new THREE.Shape();
+
+        // Zone vertices are in world coords on ground (y=0)
+        // ShapeGeometry is created in XY plane, then rotated to lie flat
+        // When rotating -90° around X: shape(x,y) -> world(x, 0, -y)
+        // So we use (vertex.x, -vertex.z) to get correct world position
+        shape.moveTo(target.zoneVertices[0].x, -target.zoneVertices[0].z);
+
+        for (let i = 1; i < target.zoneVertices.length; i++) {
+            shape.lineTo(target.zoneVertices[i].x, -target.zoneVertices[i].z);
+        }
+
+        shape.closePath();
+
+        const geom = new THREE.ShapeGeometry(shape);
+        return geom;
+    }, [target.zoneVertices]);
+
+    if (customGeometry) {
+        // Custom geometry: render at origin (vertices already in world coords)
+        return (
+            <mesh
+                geometry={customGeometry}
+                rotation={[-Math.PI / 2, 0, 0]}
+                position={[0, 0.01, 0]}
+                onClick={(e) => { e.stopPropagation(); onClick(); }}
+                onPointerOver={() => setHover(true)}
+                onPointerOut={() => setHover(false)}
+            >
+                <meshBasicMaterial color={hovered ? "#fbbf24" : "#ffffff"} transparent opacity={hovered ? 0.6 : 0.0} depthWrite={false} side={2} />
+            </mesh>
+        );
+    }
+
+    // Default geometry: simple shapes centered at targetCenter
     return (
         <group position={target.targetCenter}>
             <mesh

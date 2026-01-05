@@ -1,4 +1,4 @@
-import { Vector3, Quaternion, Color } from 'three';
+import { Vector3, Quaternion } from 'three';
 import { PolyhedronDefinition, FaceData } from './PolyhedronDefinition';
 import { VERTEX_COLORS, GRID_COLOR_1, GRID_COLOR_2, EDGE_LENGTH } from '../constants';
 
@@ -81,25 +81,25 @@ function createDoublyCoveredKGon(config: KGonConfig): PolyhedronDefinition {
       // For planar degenerate polyhedra, we have 2 faces at the same location
       // Face 1 (bottom, normal down): vertices in CCW order when viewed from below
       // Face 2 (top, normal up): vertices in CCW order when viewed from above (= reversed)
-      // Add tiny vertical separation for rendering clarity without affecting physics
-      const VISUAL_OFFSET = 0.002;
+      // NOTE: We use EXACT vertices (no offset) for physics calculations
+      // Visual offset is only applied during rendering in PolyhedronMesh
 
-      // Face 1: normal pointing down (-Y), vertices offset slightly below
-      const face1Verts = vertices.map(v => new Vector3(v.x, v.y - VISUAL_OFFSET, v.z));
+      // Face 1: exact vertices
+      const face1Verts = vertices.map(v => new Vector3(v.x, v.y, v.z));
 
-      // Face 2: normal pointing up (+Y), vertices reversed and offset slightly above
-      const face2Verts = [...vertices].reverse().map(v => new Vector3(v.x, v.y + VISUAL_OFFSET, v.z));
+      // Face 2: reversed vertices
+      const face2Verts = [...vertices].reverse().map(v => new Vector3(v.x, v.y, v.z));
 
       return [
         {
           index: 1,
-          center: new Vector3(0, -inradius - VISUAL_OFFSET, 0),  // Slightly below
+          center: new Vector3(0, -inradius, 0),
           normal: new Vector3(0, -1, 0),
           vertices: face1Verts
         },
         {
           index: 2,
-          center: new Vector3(0, -inradius + VISUAL_OFFSET, 0),  // Slightly above
+          center: new Vector3(0, -inradius, 0),
           normal: new Vector3(0, 1, 0),
           vertices: face2Verts
         }

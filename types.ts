@@ -15,6 +15,7 @@ export interface RollTarget {
   point: Vector3; // The midpoint of the edge (pivot point)
   targetCenter: Vector3; // The center of the target tile
   directionAngle: number; // Angle for the helper arrow
+  zoneVertices?: Vector3[]; // Optional: custom interaction zone vertices (projected adjacent face)
 }
 
 export interface HistoryStep {
