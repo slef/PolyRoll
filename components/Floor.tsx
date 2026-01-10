@@ -83,7 +83,7 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
             const size = EDGE_LENGTH;
             const hexRadius = size;
             const rows = 8, cols = 8;
-            const uniquePoints = new Map<string, {x: number, z: number, i: number, j: number}>();
+            const uniquePoints = new Map<string, {x: number, z: number, colorIdx: number}>();
 
             for (let row = -rows; row <= rows; row++) {
                 for (let col = -cols; col <= cols; col++) {
@@ -98,7 +98,9 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
 
                         const key = `${vx.toFixed(4)},${vz.toFixed(4)}`;
                         if (!uniquePoints.has(key)) {
-                            uniquePoints.set(key, {x: vx, z: vz, i: col, j: row});
+                            // Assign color directly: alternate based on k (vertex index within hexagon)
+                            const colorIdx = k % 2;
+                            uniquePoints.set(key, {x: vx, z: vz, colorIdx});
                         }
                     }
                 }
@@ -106,7 +108,7 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
 
             uniquePoints.forEach(pt => {
                 posArray.push(pt.x, 0.005, pt.z);
-                const colorHex = definition.getLatticeVertexColor(pt.i, pt.j);
+                const colorHex = [VERTEX_COLORS[0], VERTEX_COLORS[1]][pt.colorIdx];
                 const c = new Color(colorHex);
                 colArray.push(c.r, c.g, c.b);
             });

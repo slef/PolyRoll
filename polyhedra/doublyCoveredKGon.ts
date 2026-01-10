@@ -299,8 +299,8 @@ export const dcHexagon = createDoublyCoveredKGon({
   getFaceColorIndex: (faceIndex) => faceIndex - 1,  // Face 1→0, Face 2→1
 
   getLatticeVertexColorIndex: (i, j) => {
-    // 2-color bipartite pattern
-    return (i + j) % 2;
+    // 2-color pattern: alternate based on hexagon column
+    return ((i % 2) + 2) % 2;
   },
 
   getMoveDataImpl: (angle) => {
