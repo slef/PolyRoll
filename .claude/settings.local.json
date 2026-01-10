@@ -7,7 +7,8 @@
       "Bash(node -e:*)",
       "Bash(node /tmp/test-faces.cjs:*)",
       "Bash(node test-faces.cjs:*)",
-      "Bash(open http://localhost:3003/)"
+      "Bash(open http://localhost:3003/)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

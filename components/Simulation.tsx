@@ -115,6 +115,8 @@ export const Simulation: React.FC<SimulationProps> = ({
     const bottomFace = worldFaces[bottomFaceIndex];
     const bottomFaceVertexCount = bottomFace.vertices.length;
 
+    console.log(`[updateTargets] Bottom face: ${bottomFace.index}`);
+
     const newTargets: RollTarget[] = [];
 
     // For each edge of the bottom face, find the adjacent face and create interaction zone
@@ -205,48 +207,88 @@ export const Simulation: React.FC<SimulationProps> = ({
   const triggerRollForCrossing = (crossing: EdgeCrossing) => {
     if (!meshRef.current) return;
 
-    // We need to find which edge on the bottom face corresponds to this crossing
-    // Get the current world vertices
-    const matrix = new Matrix4().compose(
-      meshRef.current.position,
-      meshRef.current.quaternion,
-      new Vector3(1, 1, 1)
-    );
-    const localVertices = definition.getVertices();
-    const worldVertices = localVertices.map(v => v.clone().applyMatrix4(matrix));
+    console.log('[triggerRollForCrossing] crossing:', crossing);
+    console.log('[triggerRollForCrossing] Want to roll to face:', crossing.toFaceIndex);
+    console.log('[triggerRollForCrossing] targets.length:', targets.length);
 
-    // Transform the crossing edge vertices to world space to find matching bottom vertices
-    const worldEdge1 = crossing.edgeVertex1.clone().applyMatrix4(matrix);
-    const worldEdge2 = crossing.edgeVertex2.clone().applyMatrix4(matrix);
+    // Simple approach: find which target leads to the toFaceIndex
+    // Targets are built from updateTargets which finds adjacent faces for each edge
+    // We need to check which target's adjacent face matches toFaceIndex
 
-    // Find which bottom vertices match this edge
-    const sorted = [...worldVertices].map((v, i) => ({ v, i })).sort((a, b) => a.v.y - b.v.y);
-    const groundCount = definition.getBottomVertexCount();
-    const bottomVertices = sorted.slice(0, groundCount).map(item => item.v);
+    const faces = definition.getFaces();
 
-    // Find the two bottom vertices that match the crossing edge
-    let matchingBottomVerts: Vector3[] = [];
-    for (const bv of bottomVertices) {
-      if (bv.distanceTo(worldEdge1) < 0.01 || bv.distanceTo(worldEdge2) < 0.01) {
-        matchingBottomVerts.push(bv);
+    // IMPORTANT: Use the mesh's current position/quaternion, not the props
+    // During animation, the mesh is mid-roll but props haven't updated yet
+    const currentPos = meshRef.current.position.clone();
+    const currentQuat = meshRef.current.quaternion.clone();
+    const matrix = new Matrix4().compose(currentPos, currentQuat, new Vector3(1, 1, 1));
+
+    // Transform faces to world space to find bottom face
+    const worldFaces = faces.map(face => ({
+      ...face,
+      center: face.center.clone().applyMatrix4(matrix),
+      normal: face.normal.clone().applyQuaternion(currentQuat),
+      vertices: face.vertices.map(v => v.clone().applyMatrix4(matrix))
+    }));
+
+    // Find bottom face
+    let bottomFace = worldFaces[0];
+    let bestDot = -1;
+    worldFaces.forEach((face) => {
+      const dot = face.normal.dot(new Vector3(0, -1, 0));
+      if (dot > bestDot) {
+        bestDot = dot;
+        bottomFace = face;
+      }
+    });
+
+    console.log('[triggerRollForCrossing] Current bottom face:', bottomFace.index);
+
+    // Find which edge of the bottom face leads to toFaceIndex
+    let bestTargetIndex = -1;
+    for (let i = 0; i < bottomFace.vertices.length; i++) {
+      const nextI = (i + 1) % bottomFace.vertices.length;
+      const edgeV1 = bottomFace.vertices[i];
+      const edgeV2 = bottomFace.vertices[nextI];
+
+      // Find adjacent face for this edge
+      const adjacentFace = worldFaces.find(f =>
+        f.index !== bottomFace.index &&
+        f.vertices.some(v => v.distanceTo(edgeV1) < 0.001) &&
+        f.vertices.some(v => v.distanceTo(edgeV2) < 0.001)
+      );
+
+      console.log(`[triggerRollForCrossing] Edge ${i} leads to face ${adjacentFace?.index || 'none'}`);
+
+      if (adjacentFace && adjacentFace.index === crossing.toFaceIndex) {
+        bestTargetIndex = i;
+        break;
       }
     }
 
-    if (matchingBottomVerts.length >= 2) {
-      // Use the same logic as handleRoll
-      const pivot = new Vector3().addVectors(matchingBottomVerts[0], matchingBottomVerts[1]).multiplyScalar(0.5);
-      const currentFloorCenter = new Vector3(meshRef.current.position.x, 0, meshRef.current.position.z);
-      const toPivot = new Vector3().subVectors(pivot, currentFloorCenter);
-      const rollDirection = toPivot.clone().normalize();
-      const axis = new Vector3(0, 1, 0).cross(rollDirection).normalize();
+    console.log(`[triggerRollForCrossing] Best target index: ${bestTargetIndex}`);
 
-      initiateRoll(axis, pivot);
+    if (bestTargetIndex >= 0 && bestTargetIndex < targets.length) {
+      console.log('[triggerRollForCrossing] Using target', bestTargetIndex);
+      handleRoll(targets[bestTargetIndex]);
+    } else {
+      console.log('[triggerRollForCrossing] No matching target found!');
     }
   };
 
   const handleRoll = (target: RollTarget) => {
-    if (isRolling || isRollAnimating || !meshRef.current) return;
+    console.log('[handleRoll] called. isRolling:', isRolling, 'isRollAnimating:', isRollAnimating);
+    // Block if already rolling, but allow if we're in roll animation mode
+    if (isRolling || !meshRef.current) {
+      console.log('[handleRoll] Blocked!');
+      return;
+    }
+    // Also block manual clicks during animation (but allow programmatic calls from triggerRollForCrossing)
+    if (isRollAnimating && !isRolling) {
+      // This is a programmatic call during animation - allow it
+    }
     const { label, delta } = definition.getMoveData(target.directionAngle);
+    console.log('[handleRoll] Initiating roll with label:', label, 'delta:', delta);
     initiateRoll(target.axis, target.point, { label, delta });
   };
 
@@ -272,8 +314,15 @@ export const Simulation: React.FC<SimulationProps> = ({
             setIsRolling(false);
 
             if (isRollAnimating) {
-              // In animation mode, just advance to next crossing
-              // The paths are already fully rendered, just the polyhedron moves
+              // In animation mode, advance to next crossing and update history
+              const finalFace = calculateFaceIndex(newQuat);
+              if (pendingMove.current) {
+                  onRollComplete(newPos, newQuat, pendingMove.current.label, pendingMove.current.delta, finalFace);
+              }
+
+              // Update targets for the new orientation before triggering next roll
+              updateTargets(newPos, newQuat);
+
               setCurrentCrossingIndex(prev => prev + 1);
             } else {
               // Regular roll mode

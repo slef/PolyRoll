@@ -7,8 +7,9 @@ import { TurtleConsole } from './components/TurtleConsole';
 import { Info, Rotate3d, Target, History, ChevronRight } from 'lucide-react';
 import { HistoryStep, ShapeType, PathSegment, PathResult, EdgeCrossing } from './types';
 import { Vector3, Quaternion } from 'three';
-import { parseCommands, generatePath, generateFlatPath, extractEdgeCrossings } from './utils/turtle';
-import { getPolyhedron } from './polyhedra';
+import { parseCommands, generatePath, generateFlatPath, getAdjacentFace } from './utils/turtle';
+import { getPolyhedron, FaceData } from './polyhedra';
+import * as THREE from 'three';
 
 export default function App() {
   const [currentShape, setCurrentShape] = useState<ShapeType>('octahedron');
@@ -152,8 +153,38 @@ export default function App() {
       setFlatPathSegments(flatSegments);
       setPathError(result.error);
 
-      // Extract edge crossings from the path
-      const crossings = extractEdgeCrossings(currentShape, result.segments);
+      // Convert edge rolls to EdgeCrossing format for animation
+      const definition = getPolyhedron(currentShape);
+      const faces = definition.getFaces();
+
+      const crossings: EdgeCrossing[] = result.edgeRolls.map((roll) => {
+        // Find the face to get crossing point
+        const face = faces.find(f => f.index === roll.faceIndex);
+        if (!face) return null;
+
+        const v1 = face.vertices[roll.edgeIndex];
+        const v2 = face.vertices[(roll.edgeIndex + 1) % face.vertices.length];
+
+        // Use edge midpoint as crossing point
+        const crossingPoint = new THREE.Vector3().addVectors(v1, v2).multiplyScalar(0.5);
+
+        return {
+          fromFaceIndex: roll.faceIndex,
+          toFaceIndex: roll.toFaceIndex,
+          edgeIndex: roll.edgeIndex,
+          crossingPoint,
+          segmentIndex: roll.sequence,
+          pointIndexInSegment: 0
+        };
+      }).filter(c => c !== null) as EdgeCrossing[];
+
+      console.log('[handleRollAnimation] Edge rolls:', result.edgeRolls);
+      console.log('[handleRollAnimation] Converted crossings:', crossings);
+
+      // Debug: log each crossing's details
+      crossings.forEach((c, i) => {
+        console.log(`  Crossing ${i}: face ${c.fromFaceIndex} edge ${c.edgeIndex} → face ${c.toFaceIndex}`);
+      });
 
       // Trigger the roll animation
       setRollAnimationCrossings(crossings);

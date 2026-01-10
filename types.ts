@@ -33,8 +33,16 @@ export interface PathSegment {
   points: Vector3[]; // 3D local points relative to polyhedron center
 }
 
+export interface EdgeRoll {
+  faceIndex: number;    // Which face the roll starts on (fromFace)
+  toFaceIndex: number;  // Which face to roll to
+  edgeIndex: number;    // Which edge of that face to roll over
+  sequence: number;     // Order in the roll sequence (0, 1, 2, ...)
+}
+
 export interface PathResult {
   segments: PathSegment[];
+  edgeRolls: EdgeRoll[];  // Edge rolls detected during path generation
   error?: {
     message: string;
     lineNumber: number; // 1-based line number in source
@@ -56,8 +64,7 @@ export interface TurtleCommand {
 export interface EdgeCrossing {
   fromFaceIndex: number;
   toFaceIndex: number;
-  edgeVertex1: Vector3;
-  edgeVertex2: Vector3;
+  edgeIndex: number;  // Which edge of the bottom face to roll over (0-based, from face vertices array)
   crossingPoint: Vector3;
   segmentIndex: number; // which segment this crossing belongs to
   pointIndexInSegment: number; // where in the segment this crossing occurs

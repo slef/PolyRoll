@@ -1,5 +1,5 @@
 import { Vector3, Quaternion } from 'three';
-import { ShapeType, PathSegment, PathResult, TurtleState, TurtleCommand, EdgeCrossing } from '../types';
+import { ShapeType, PathSegment, PathResult, TurtleState, TurtleCommand, EdgeCrossing, EdgeRoll } from '../types';
 import { getPolyhedron, FaceData } from '../polyhedra';
 
 export function parseCommands(text: string): TurtleCommand[] {
@@ -27,7 +27,7 @@ function offsetPoint(pos: Vector3, face: FaceData): Vector3 {
 /**
  * Find the adjacent face across a given edge.
  */
-function getAdjacentFace(
+export function getAdjacentFace(
     faces: FaceData[],
     currentFace: FaceData,
     edgeV1: Vector3,
@@ -75,7 +75,7 @@ export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathR
     const startFace = faces.find((f: FaceData) => f.index === 1);
 
     if (!startFace) {
-        return { segments: [] };
+        return { segments: [], edgeRolls: [] };
     }
 
     // Initial Heading: Point towards the midpoint of the first edge.
@@ -90,6 +90,7 @@ export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathR
     };
 
     const segments: PathSegment[] = [];
+    const edgeRolls: EdgeRoll[] = [];
     let currentPath: Vector3[] = [offsetPoint(state.pos, startFace)];
     let error: PathResult['error'] = undefined;
 
@@ -115,7 +116,7 @@ export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathR
             if (f) state.heading.applyAxisAngle(f.normal, rotateAngle);
         } else if (cmd.type === 'fd' || cmd.type === 'bk') {
             const dist = cmd.type === 'fd' ? (cmd.value as number) : -(cmd.value as number);
-            const moveError = moveTurtle(state, dist, faces, currentPath);
+            const moveError = moveTurtle(state, dist, faces, currentPath, edgeRolls);
             if (moveError) {
                 error = { message: moveError, lineNumber: cmd.lineNumber };
                 break; // Stop processing further commands
@@ -125,10 +126,10 @@ export function generatePath(shape: ShapeType, commands: TurtleCommand[]): PathR
 
     if (currentPath.length > 1) segments.push({ points: currentPath });
 
-    return { segments, error };
+    return { segments, edgeRolls, error };
 }
 
-function moveTurtle(state: TurtleState, distance: number, faces: FaceData[], currentPath: Vector3[]): string | null {
+function moveTurtle(state: TurtleState, distance: number, faces: FaceData[], currentPath: Vector3[], edgeRolls: EdgeRoll[]): string | null {
     let remaining = Math.abs(distance);
     const sign = Math.sign(distance);
 
@@ -163,6 +164,14 @@ function moveTurtle(state: TurtleState, distance: number, faces: FaceData[], cur
 
             const neighbor = getAdjacentFace(faces, f, v1, v2);
             if (neighbor) {
+                // Record the edge roll before crossing
+                edgeRolls.push({
+                    faceIndex: f.index,
+                    toFaceIndex: neighbor.index,
+                    edgeIndex: edgeHit.edgeIndex,
+                    sequence: edgeRolls.length
+                });
+
                 crossEdge(state, f, neighbor, v1, v2);
                 currentPath.push(offsetPoint(state.pos, neighbor));
             } else {
@@ -242,34 +251,117 @@ export function extractEdgeCrossings(shape: ShapeType, segments: PathSegment[]):
     const faces = definition.getFaces();
     const crossings: EdgeCrossing[] = [];
 
-    segments.forEach((segment, segmentIndex) => {
-        for (let i = 0; i < segment.points.length - 1; i++) {
-            const p1 = segment.points[i];
-            const p2 = segment.points[i + 1];
+    // Special handling for doubly covered polygons (degenerate polyhedra)
+    const isDoublyCovered = definition.faceCount === 2 && Math.abs(definition.dihedralAngle) < 0.01;
 
-            // Determine which faces these points belong to
-            const face1 = findClosestFace(p1, faces);
-            const face2 = findClosestFace(p2, faces);
+    if (isDoublyCovered) {
+        // For DC polygons, detect when the path crosses polygon edges
+        // Face 1 and Face 2 share the same vertices (in opposite winding order)
+        const face1 = faces[0];
+        const face2 = faces[1];
 
-            if (face1 && face2 && face1.index !== face2.index) {
-                // Found a face transition - find the shared edge
-                const sharedEdge = findSharedEdge(face1, face2);
-                if (sharedEdge) {
-                    crossings.push({
-                        fromFaceIndex: face1.index,
-                        toFaceIndex: face2.index,
-                        edgeVertex1: sharedEdge.v1,
-                        edgeVertex2: sharedEdge.v2,
-                        crossingPoint: p2.clone(),
-                        segmentIndex,
-                        pointIndexInSegment: i + 1
-                    });
+        // Track current face (starts on Face 1)
+        let currentFace = face1;
+
+        segments.forEach((segment, segmentIndex) => {
+            for (let i = 0; i < segment.points.length - 1; i++) {
+                const p1 = segment.points[i];
+                const p2 = segment.points[i + 1];
+
+                // Build edge list from CURRENT face (not always Face 1)
+                const currentFaceEdges: Array<{v1: Vector3, v2: Vector3, edgeIndex: number}> = [];
+                for (let edgeIdx = 0; edgeIdx < currentFace.vertices.length; edgeIdx++) {
+                    const v1 = currentFace.vertices[edgeIdx];
+                    const v2 = currentFace.vertices[(edgeIdx + 1) % currentFace.vertices.length];
+                    currentFaceEdges.push({ v1, v2, edgeIndex: edgeIdx });
+                }
+
+                // Check if line segment (p1, p2) crosses any edge of the CURRENT face
+                for (const edge of currentFaceEdges) {
+                    if (lineSegmentsIntersect2D(p1, p2, edge.v1, edge.v2)) {
+                        const nextFace = currentFace.index === 1 ? face2 : face1;
+
+                        crossings.push({
+                            fromFaceIndex: currentFace.index,
+                            toFaceIndex: nextFace.index,
+                            edgeIndex: edge.edgeIndex,
+                            crossingPoint: p2.clone(),
+                            segmentIndex,
+                            pointIndexInSegment: i + 1
+                        });
+
+                        // Flip to the other face
+                        currentFace = nextFace;
+                        break; // Only record one crossing per line segment
+                    }
                 }
             }
-        }
-    });
+        });
+    } else {
+        // Standard 3D polyhedra: detect face transitions
+        segments.forEach((segment, segmentIndex) => {
+            for (let i = 0; i < segment.points.length - 1; i++) {
+                const p1 = segment.points[i];
+                const p2 = segment.points[i + 1];
+
+                // Determine which faces these points belong to
+                const face1 = findClosestFace(p1, faces);
+                const face2 = findClosestFace(p2, faces);
+
+                if (face1 && face2 && face1.index !== face2.index) {
+                    // Found a face transition - find the shared edge
+                    const sharedEdge = findSharedEdge(face1, face2);
+                    if (sharedEdge) {
+                        // Find which edge index of face1 contains these vertices
+                        let edgeIndex = -1;
+                        for (let ei = 0; ei < face1.vertices.length; ei++) {
+                            const v1 = face1.vertices[ei];
+                            const v2 = face1.vertices[(ei + 1) % face1.vertices.length];
+
+                            // Check if this edge matches the shared edge (either direction)
+                            const matchesForward = v1.distanceTo(sharedEdge.v1) < 0.01 && v2.distanceTo(sharedEdge.v2) < 0.01;
+                            const matchesReverse = v1.distanceTo(sharedEdge.v2) < 0.01 && v2.distanceTo(sharedEdge.v1) < 0.01;
+
+                            if (matchesForward || matchesReverse) {
+                                edgeIndex = ei;
+                                break;
+                            }
+                        }
+
+                        if (edgeIndex >= 0) {
+                            crossings.push({
+                                fromFaceIndex: face1.index,
+                                toFaceIndex: face2.index,
+                                edgeIndex,
+                                crossingPoint: p2.clone(),
+                                segmentIndex,
+                                pointIndexInSegment: i + 1
+                            });
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     return crossings;
+}
+
+// Helper function to check if two 2D line segments intersect (ignoring Y coordinate)
+function lineSegmentsIntersect2D(p1: Vector3, p2: Vector3, v1: Vector3, v2: Vector3): boolean {
+    // Project to XZ plane
+    const x1 = p1.x, z1 = p1.z;
+    const x2 = p2.x, z2 = p2.z;
+    const x3 = v1.x, z3 = v1.z;
+    const x4 = v2.x, z4 = v2.z;
+
+    const denom = (x1 - x2) * (z3 - z4) - (z1 - z2) * (x3 - x4);
+    if (Math.abs(denom) < 0.0001) return false; // Parallel or coincident
+
+    const t = ((x1 - x3) * (z3 - z4) - (z1 - z3) * (x3 - x4)) / denom;
+    const u = -((x1 - x2) * (z1 - z3) - (z1 - z2) * (x1 - x3)) / denom;
+
+    return t > 0 && t <= 1 && u > 0 && u <= 1;
 }
 
 function findClosestFace(point: Vector3, faces: FaceData[]): FaceData | null {
