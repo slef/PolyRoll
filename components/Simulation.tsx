@@ -115,8 +115,6 @@ export const Simulation: React.FC<SimulationProps> = ({
     const bottomFace = worldFaces[bottomFaceIndex];
     const bottomFaceVertexCount = bottomFace.vertices.length;
 
-    console.log(`[updateTargets] Bottom face: ${bottomFace.index}`);
-
     const newTargets: RollTarget[] = [];
 
     // For each edge of the bottom face, find the adjacent face and create interaction zone
@@ -207,80 +205,19 @@ export const Simulation: React.FC<SimulationProps> = ({
   const triggerRollForCrossing = (crossing: EdgeCrossing) => {
     if (!meshRef.current) return;
 
-    console.log('[triggerRollForCrossing] crossing:', crossing);
-    console.log('[triggerRollForCrossing] Want to roll to face:', crossing.toFaceIndex);
-    console.log('[triggerRollForCrossing] targets.length:', targets.length);
+    // Use the edge index from path generation directly
+    const targetIndex = crossing.edgeIndex;
 
-    // Simple approach: find which target leads to the toFaceIndex
-    // Targets are built from updateTargets which finds adjacent faces for each edge
-    // We need to check which target's adjacent face matches toFaceIndex
-
-    const faces = definition.getFaces();
-
-    // IMPORTANT: Use the mesh's current position/quaternion, not the props
-    // During animation, the mesh is mid-roll but props haven't updated yet
-    const currentPos = meshRef.current.position.clone();
-    const currentQuat = meshRef.current.quaternion.clone();
-    const matrix = new Matrix4().compose(currentPos, currentQuat, new Vector3(1, 1, 1));
-
-    // Transform faces to world space to find bottom face
-    const worldFaces = faces.map(face => ({
-      ...face,
-      center: face.center.clone().applyMatrix4(matrix),
-      normal: face.normal.clone().applyQuaternion(currentQuat),
-      vertices: face.vertices.map(v => v.clone().applyMatrix4(matrix))
-    }));
-
-    // Find bottom face
-    let bottomFace = worldFaces[0];
-    let bestDot = -1;
-    worldFaces.forEach((face) => {
-      const dot = face.normal.dot(new Vector3(0, -1, 0));
-      if (dot > bestDot) {
-        bestDot = dot;
-        bottomFace = face;
-      }
-    });
-
-    console.log('[triggerRollForCrossing] Current bottom face:', bottomFace.index);
-
-    // Find which edge of the bottom face leads to toFaceIndex
-    let bestTargetIndex = -1;
-    for (let i = 0; i < bottomFace.vertices.length; i++) {
-      const nextI = (i + 1) % bottomFace.vertices.length;
-      const edgeV1 = bottomFace.vertices[i];
-      const edgeV2 = bottomFace.vertices[nextI];
-
-      // Find adjacent face for this edge
-      const adjacentFace = worldFaces.find(f =>
-        f.index !== bottomFace.index &&
-        f.vertices.some(v => v.distanceTo(edgeV1) < 0.001) &&
-        f.vertices.some(v => v.distanceTo(edgeV2) < 0.001)
-      );
-
-      console.log(`[triggerRollForCrossing] Edge ${i} leads to face ${adjacentFace?.index || 'none'}`);
-
-      if (adjacentFace && adjacentFace.index === crossing.toFaceIndex) {
-        bestTargetIndex = i;
-        break;
-      }
-    }
-
-    console.log(`[triggerRollForCrossing] Best target index: ${bestTargetIndex}`);
-
-    if (bestTargetIndex >= 0 && bestTargetIndex < targets.length) {
-      console.log('[triggerRollForCrossing] Using target', bestTargetIndex);
-      handleRoll(targets[bestTargetIndex]);
+    if (targetIndex >= 0 && targetIndex < targets.length) {
+      handleRoll(targets[targetIndex]);
     } else {
-      console.log('[triggerRollForCrossing] No matching target found!');
+      console.error('[triggerRollForCrossing] Edge index out of bounds!', targetIndex, 'targets.length:', targets.length);
     }
   };
 
   const handleRoll = (target: RollTarget) => {
-    console.log('[handleRoll] called. isRolling:', isRolling, 'isRollAnimating:', isRollAnimating);
     // Block if already rolling, but allow if we're in roll animation mode
     if (isRolling || !meshRef.current) {
-      console.log('[handleRoll] Blocked!');
       return;
     }
     // Also block manual clicks during animation (but allow programmatic calls from triggerRollForCrossing)
@@ -288,7 +225,6 @@ export const Simulation: React.FC<SimulationProps> = ({
       // This is a programmatic call during animation - allow it
     }
     const { label, delta } = definition.getMoveData(target.directionAngle);
-    console.log('[handleRoll] Initiating roll with label:', label, 'delta:', delta);
     initiateRoll(target.axis, target.point, { label, delta });
   };
 

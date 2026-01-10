@@ -178,14 +178,6 @@ export default function App() {
         };
       }).filter(c => c !== null) as EdgeCrossing[];
 
-      console.log('[handleRollAnimation] Edge rolls:', result.edgeRolls);
-      console.log('[handleRollAnimation] Converted crossings:', crossings);
-
-      // Debug: log each crossing's details
-      crossings.forEach((c, i) => {
-        console.log(`  Crossing ${i}: face ${c.fromFaceIndex} edge ${c.edgeIndex} → face ${c.toFaceIndex}`);
-      });
-
       // Trigger the roll animation
       setRollAnimationCrossings(crossings);
   };
