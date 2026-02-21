@@ -5,7 +5,7 @@ import { Simulation } from './components/Simulation';
 import { Floor } from './components/Floor';
 import { TurtleConsole } from './components/TurtleConsole';
 import { Info, Rotate3d, Target, History, ChevronRight } from 'lucide-react';
-import { HistoryStep, ShapeType, PathSegment, PathResult, EdgeCrossing } from './types';
+import { HistoryStep, ShapeType, PathSegment, PathResult, EdgeCrossing, FaceStamp } from './types';
 import { Vector3, Quaternion } from 'three';
 import { parseCommands, generatePath, generateFlatPath, getAdjacentFace } from './utils/turtle';
 import { getPolyhedron, FaceData } from './polyhedra';
@@ -54,6 +54,22 @@ export default function App() {
     }];
   };
 
+  const [stamps, setStamps] = useState<FaceStamp[]>([]);
+
+  const computeStamp = useCallback((pos: Vector3, quat: Quaternion, faceIndex: number, shape: ShapeType): FaceStamp | null => {
+    const def = getPolyhedron(shape);
+    if (def.latticeType !== 'none') return null;
+    const faces = def.getFaces();
+    const face = faces.find(f => f.index === faceIndex);
+    if (!face) return null;
+    const matrix = new THREE.Matrix4().compose(pos, quat, new Vector3(1, 1, 1));
+    const groundVertices = face.vertices.map(v => {
+      const worldV = v.clone().applyMatrix4(matrix);
+      return new Vector3(worldV.x, 0.002, worldV.z);
+    });
+    return { vertices: groundVertices, faceIndex, color: def.getFaceColor(faceIndex - 1) };
+  }, []);
+
   const [history, setHistory] = useState<HistoryStep[]>(() => createInitialHistory('octahedron'));
   const [calibAngles] = useState<Record<ShapeType, number>>(() => {
       const octDef = getPolyhedron('octahedron');
@@ -63,6 +79,7 @@ export default function App() {
       const dcTriDef = getPolyhedron('dcTriangle');
       const dcSqDef = getPolyhedron('dcSquare');
       const dcHexDef = getPolyhedron('dcHexagon');
+      const dodDef = getPolyhedron('dodecahedron');
       const oct = getFaceOrientation(octDef.initialQuaternion, 1, 'octahedron');
       const ico = getFaceOrientation(icoDef.initialQuaternion, 1, 'icosahedron');
       const cub = getFaceOrientation(cubeDef.initialQuaternion, 1, 'cube');
@@ -70,11 +87,13 @@ export default function App() {
       const dcTri = getFaceOrientation(dcTriDef.initialQuaternion, 1, 'dcTriangle');
       const dcSq = getFaceOrientation(dcSqDef.initialQuaternion, 1, 'dcSquare');
       const dcHex = getFaceOrientation(dcHexDef.initialQuaternion, 1, 'dcHexagon');
+      const dod = getFaceOrientation(dodDef.initialQuaternion, 1, 'dodecahedron');
       return {
         octahedron: oct.rawAngle,
         icosahedron: ico.rawAngle,
         cube: cub.rawAngle,
         tetrahedron: tet.rawAngle,
+        dodecahedron: dod.rawAngle,
         dcTriangle: dcTri.rawAngle,
         dcSquare: dcSq.rawAngle,
         dcHexagon: dcHex.rawAngle
@@ -90,6 +109,10 @@ export default function App() {
       setPathSegments([]);
       setFlatPathSegments([]);
       setPathError(undefined);
+      // Create initial stamp for blank-floor shapes
+      const def = getPolyhedron(shape);
+      const initialStamp = computeStamp(def.initialPosition, def.initialQuaternion, 1, shape);
+      setStamps(initialStamp ? [initialStamp] : []);
   };
 
   const handleCommandsChange = (newCommands: string) => {
@@ -121,6 +144,9 @@ export default function App() {
     const newHistory = [...history.slice(0, currentStepIndex + 1), newStep];
     setHistory(newHistory);
     setCurrentStepIndex(newHistory.length - 1);
+
+    const stamp = computeStamp(newPos, newQuat, faceIndex, currentShape);
+    if (stamp) setStamps(prev => [...prev.slice(0, currentStepIndex + 1), stamp]);
   };
 
   const jumpToStep = (index: number) => {
@@ -197,7 +223,7 @@ export default function App() {
                 </h1>
                 <div className="flex flex-col gap-2 mt-3">
                     <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
-                        {(['tetrahedron', 'cube', 'octahedron', 'icosahedron'] as ShapeType[]).map(s => (
+                        {(['tetrahedron', 'cube', 'octahedron', 'icosahedron', 'dodecahedron'] as ShapeType[]).map(s => (
                             <button key={s} onClick={() => changeShape(s)}
                                 className={`flex-1 px-3 py-1.5 rounded-md text-sm font-semibold transition-all capitalize ${currentShape === s ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                             >
@@ -270,6 +296,7 @@ export default function App() {
                 rollAnimationCrossings={rollAnimationCrossings}
                 onRollComplete={handleRollComplete}
                 onRollAnimationComplete={handleRollAnimationComplete}
+                stamps={stamps.slice(0, currentStepIndex + 1)}
              />
              <Floor shape={currentShape} />
              <ContactShadows position={[0, 0, 0]} opacity={0.4} scale={15} blur={2.5} far={2} resolution={512} color="#475569" />

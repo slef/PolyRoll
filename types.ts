@@ -1,6 +1,6 @@
 import { Vector3, Quaternion } from 'three';
 
-export type ShapeType = 'octahedron' | 'icosahedron' | 'cube' | 'tetrahedron' | 'dcTriangle' | 'dcSquare' | 'dcHexagon';
+export type ShapeType = 'octahedron' | 'icosahedron' | 'cube' | 'tetrahedron' | 'dodecahedron' | 'dcTriangle' | 'dcSquare' | 'dcHexagon';
 
 export interface GameState {
   isRolling: boolean;
@@ -59,6 +59,12 @@ export interface TurtleCommand {
   type: 'start' | 'fd' | 'bk' | 'lt' | 'rt';
   value: number | [number, number];
   lineNumber: number; // 1-based line number in source
+}
+
+export interface FaceStamp {
+  vertices: Vector3[];  // ground-projected polygon vertices
+  faceIndex: number;    // 1-based
+  color: string;        // from facePalette
 }
 
 export interface EdgeCrossing {

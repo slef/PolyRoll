@@ -14,10 +14,11 @@ export const Floor: React.FC<FloorProps> = ({ shape }) => {
 
   return (
     <group position={[0, -0.005, 0]}>
-        {latticeType === 'square' ? <SquareFloorMesh /> :
+        {latticeType === 'none' ? <BlankFloorMesh /> :
+         latticeType === 'square' ? <SquareFloorMesh /> :
          latticeType === 'triangular' ? <TriangularFloorMesh /> :
          <HexagonalFloorMesh />}
-        <LatticeVertices shape={shape} />
+        {latticeType !== 'none' && <LatticeVertices shape={shape} />}
         <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.01, 0]}>
             <ringGeometry args={[0.1, 0.15, 32]} />
             <meshBasicMaterial color="#3b82f6" opacity={0.8} transparent depthTest={false} />
@@ -139,6 +140,13 @@ const LatticeVertices: React.FC<{ shape: ShapeType }> = ({ shape }) => {
         </instancedMesh>
     );
 };
+
+const BlankFloorMesh = () => (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <circleGeometry args={[15, 64]} />
+        <meshStandardMaterial color="#e2e8f0" roughness={0.9} metalness={0.0} side={DoubleSide} />
+    </mesh>
+);
 
 const SquareFloorMesh = () => {
     const { positions, colors, normals } = useMemo(() => {

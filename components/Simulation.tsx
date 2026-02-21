@@ -4,7 +4,7 @@ import { Vector3, Quaternion, Matrix4, Group, Color } from 'three';
 import * as THREE from 'three';
 import { Text, useCursor, Line } from '@react-three/drei';
 import { TRIANGLE_SIDE, EDGE_LENGTH } from '../constants';
-import { RollTarget, ShapeType, PathSegment, EdgeCrossing } from '../types';
+import { RollTarget, ShapeType, PathSegment, EdgeCrossing, FaceStamp } from '../types';
 import { getPolyhedron, PolyhedronDefinition } from '../polyhedra';
 
 interface SimulationProps {
@@ -16,6 +16,7 @@ interface SimulationProps {
   rollAnimationCrossings?: EdgeCrossing[];
   onRollComplete: (newPos: Vector3, newQuat: Quaternion, moveLabel: string, delta: {u: number, v: number}, faceIndex: number) => void;
   onRollAnimationComplete?: () => void;
+  stamps?: FaceStamp[];
 }
 
 export const Simulation: React.FC<SimulationProps> = ({
@@ -26,7 +27,8 @@ export const Simulation: React.FC<SimulationProps> = ({
   flatPathSegments = [],
   rollAnimationCrossings = [],
   onRollComplete,
-  onRollAnimationComplete
+  onRollAnimationComplete,
+  stamps = []
 }) => {
   const meshRef = useRef<Group>(null);
   const [isRolling, setIsRolling] = useState(false);
@@ -276,6 +278,9 @@ export const Simulation: React.FC<SimulationProps> = ({
 
   return (
     <group>
+        {stamps.map((stamp, i) => (
+            <StampMesh key={i} stamp={stamp} />
+        ))}
         <group ref={meshRef} position={position} quaternion={quaternion}>
             <PolyhedronMesh definition={definition} />
             {displayPathSegments.map((segment, i) => (
@@ -489,6 +494,36 @@ const InteractionZone: React.FC<{ target: RollTarget; latticeType: 'square' | 't
                 )}
                 <meshBasicMaterial color={hovered ? "#fbbf24" : "#ffffff"} transparent opacity={hovered ? 0.6 : 0.0} depthWrite={false} side={2} />
             </mesh>
+        </group>
+    );
+}
+
+const StampMesh: React.FC<{ stamp: FaceStamp }> = ({ stamp }) => {
+    const geometry = useMemo(() => {
+        if (stamp.vertices.length < 3) return null;
+        const shape = new THREE.Shape();
+        shape.moveTo(stamp.vertices[0].x, -stamp.vertices[0].z);
+        for (let i = 1; i < stamp.vertices.length; i++) {
+            shape.lineTo(stamp.vertices[i].x, -stamp.vertices[i].z);
+        }
+        shape.closePath();
+        return new THREE.ShapeGeometry(shape);
+    }, [stamp.vertices]);
+
+    if (!geometry) return null;
+
+    return (
+        <group>
+            <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
+                <meshBasicMaterial color={stamp.color} transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+            <Line
+                points={[...stamp.vertices, stamp.vertices[0]]}
+                color={stamp.color}
+                lineWidth={2}
+                transparent
+                opacity={0.8}
+            />
         </group>
     );
 }
