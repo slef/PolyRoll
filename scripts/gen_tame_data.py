@@ -640,6 +640,85 @@ def fmt(x):
     return repr(v)
 
 
+def check_cell_coverage(entries, margin=1.5):
+    """Mirror of polyhedra/cellTiling.ts generateCellTiling + clipConvex: every face must be
+    fully covered by cell pieces (a face with no cells would be drawn as nothing)."""
+    def clip(subj, poly):
+        out = list(subj)
+        for i in range(len(poly)):
+            a, b = poly[i], poly[(i + 1) % len(poly)]
+            ex, ey = b[0] - a[0], b[1] - a[1]
+            inside = lambda p: ex * (p[1] - a[1]) - ey * (p[0] - a[0]) >= -1e-9
+            inp, out = out, []
+            for j in range(len(inp)):
+                cur, prev = inp[j], inp[j - 1]
+                def inter(p, q):
+                    dx, dy = q[0] - p[0], q[1] - p[1]
+                    den = dx * ey - dy * ex
+                    if abs(den) < 1e-12:
+                        return q
+                    t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / den
+                    return (p[0] + t * dx, p[1] + t * dy)
+                if inside(cur):
+                    if not inside(prev):
+                        out.append(inter(prev, cur))
+                    out.append(cur)
+                elif inside(prev):
+                    out.append(inter(prev, cur))
+            if not out:
+                break
+        return out
+
+    def area(p):
+        return 0.5 * sum(p[i][0] * p[(i + 1) % len(p)][1] - p[(i + 1) % len(p)][0] * p[i][1] for i in range(len(p)))
+
+    bad = []
+    for e in entries:
+        cell = e['cell']
+        _, base0 = CELLS[cell]
+        u, v = T_STD[cell]
+        for j, poly in enumerate(e['faceStd']):
+            poly = [tuple(map(float, p)) for p in poly]
+            if area(poly) < 0:
+                poly = poly[::-1]
+            xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+            x0, y0, x1, y1 = min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin
+            cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+            det = u[0] * v[1] - u[1] * v[0]
+            i = round((cx * v[1] - cy * v[0]) / det)
+            k = round((u[0] * cy - u[1] * cx) / det)
+            t = i * u + k * v
+            base = {L: np.array(base0[L], float) + t for L in 'ABC'}
+            key = lambda T: frozenset((round(float(T[L][0]), 5), round(float(T[L][1]), 5)) for L in 'ABC')
+            tris, seen, q = [dict(base)], {key(base)}, [dict(base)]
+            while q:
+                T = q.pop()
+                for _, (a, b) in EDGES.items():
+                    c = [x for x in 'ABC' if x not in (a, b)][0]
+                    T2 = {a: T[a], b: T[b], c: reflect(T[c], T[a], T[b])}
+                    cen = sum(T2.values()) / 3
+                    if not (x0 < cen[0] < x1 and y0 < cen[1] < y1):
+                        continue
+                    kk = key(T2)
+                    if kk in seen:
+                        continue
+                    seen.add(kk)
+                    tris.append(T2)
+                    q.append(T2)
+            tot = 0.0
+            for T in tris:
+                tri = [tuple(T[L]) for L in 'ABC']
+                if area(tri) < 0:
+                    tri = tri[::-1]
+                piece = clip(tri, poly)
+                if len(piece) >= 3:
+                    tot += abs(area(piece))
+            if abs(tot - area(poly)) > 1e-4:
+                bad.append(f"{e['id']} face {j + 1}")
+    assert not bad, f'faces not covered by cells: {bad}'
+    print(f'cell coverage OK for all faces of {len(entries)} surfaces')
+
+
 def main():
     import pickle
     labels = pickle.load(open(os.path.join(DOCS, 'data', 'labels.pkl'), 'rb'))
@@ -682,6 +761,8 @@ def main():
             angles=angles, vertexClasses=vertex_labels,
             vertices=res['vertices'], faces=faces, faceStd=res['face_std'], frames=res['frames'],
         ))
+
+    check_cell_coverage(entries)
 
     # ---- emit TypeScript
     lines = []
