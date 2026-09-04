@@ -296,11 +296,14 @@ const HexagonalFloorMesh = () => {
  * world (sx, 0, sy), the same map used to place the polyhedron.
  */
 const CellFloor: React.FC<{ cell: TameCell }> = ({ cell }) => {
-    const { positions, colors, normals, dotPositions, dotColors } = useMemo(() => {
+    const { positions, colors, normals, dotPositions, dotColors, edgePositions } = useMemo(() => {
         const R = 11;
         const tris = generateCellTiling(cell, { minX: -R, minY: -R, maxX: R, maxY: R }, 1);
         const posArray: number[] = [];
         const colArray: number[] = [];
+        // cell edges (each undirected edge once)
+        const edgeArray: number[] = [];
+        const seenEdges = new Set<string>();
         const front = new Color(FLOOR_TINT_FRONT);
         const back = new Color(FLOOR_TINT_BACK);
         for (const t of tris) {
@@ -315,6 +318,14 @@ const CellFloor: React.FC<{ cell: TameCell }> = ({ cell }) => {
                 posArray.push(p[0], 0, p[1]);
                 colArray.push(c.r, c.g, c.b);
             }
+            for (let i = 0; i < 3; i++) {
+                const a = pts[i], b = pts[(i + 1) % 3];
+                const ka = `${a[0].toFixed(4)},${a[1].toFixed(4)}`, kb = `${b[0].toFixed(4)},${b[1].toFixed(4)}`;
+                const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+                if (seenEdges.has(key)) continue;
+                seenEdges.add(key);
+                edgeArray.push(a[0], 0.003, a[1], b[0], 0.003, b[1]);
+            }
         }
         const normArray = new Float32Array(posArray.length);
         for (let i = 0; i < normArray.length; i += 3) { normArray[i] = 0; normArray[i + 1] = 1; normArray[i + 2] = 0; }
@@ -328,7 +339,8 @@ const CellFloor: React.FC<{ cell: TameCell }> = ({ cell }) => {
         }
         return {
             positions: new Float32Array(posArray), colors: new Float32Array(colArray), normals: normArray,
-            dotPositions: new Float32Array(dotPos), dotColors: new Float32Array(dotCol)
+            dotPositions: new Float32Array(dotPos), dotColors: new Float32Array(dotCol),
+            edgePositions: new Float32Array(edgeArray)
         };
     }, [cell]);
 
@@ -342,6 +354,12 @@ const CellFloor: React.FC<{ cell: TameCell }> = ({ cell }) => {
                 </bufferGeometry>
                 <meshStandardMaterial vertexColors roughness={0.8} metalness={0.0} side={DoubleSide} />
             </mesh>
+            <lineSegments frustumCulled={false}>
+                <bufferGeometry>
+                    <bufferAttribute attach="attributes-position" count={edgePositions.length / 3} array={edgePositions} itemSize={3} />
+                </bufferGeometry>
+                <lineBasicMaterial color="#334155" transparent opacity={0.35} />
+            </lineSegments>
             <InstancedDots positions={dotPositions} colors={dotColors} radius={0.06} />
         </group>
     );

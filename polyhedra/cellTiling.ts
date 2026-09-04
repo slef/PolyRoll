@@ -41,8 +41,8 @@ export const CLASS_COLORS: Record<CornerClass, string> = {
 /** Cell tints by orientation (front = positively oriented A→B→C). */
 export const CELL_TINT_FRONT = '#5fb8b0';
 export const CELL_TINT_BACK = '#a98bd2';
-export const FLOOR_TINT_FRONT = '#7cc6c0';
-export const FLOOR_TINT_BACK = '#b9a2d8';
+export const FLOOR_TINT_FRONT = '#a6d9d4';
+export const FLOOR_TINT_BACK = '#cdbde3';
 
 export interface CellTriangle {
   corners: Record<CornerClass, Vec2>;
