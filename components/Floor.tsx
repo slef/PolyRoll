@@ -344,8 +344,9 @@ const CellFloor: React.FC<{ cell: TameCell }> = ({ cell }) => {
         };
     }, [cell]);
 
+    // key on the cell: buffer attributes of a different size must be re-created, not updated
     return (
-        <group>
+        <group key={cell}>
             <mesh receiveShadow frustumCulled={false}>
                 <bufferGeometry>
                     <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
