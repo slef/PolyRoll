@@ -1,6 +1,9 @@
 import { Vector3, Quaternion } from 'three';
 
-export type ShapeType = 'octahedron' | 'icosahedron' | 'cube' | 'tetrahedron' | 'dodecahedron' | 'dcTriangle' | 'dcSquare' | 'dcHexagon';
+import type { TameShapeId } from './polyhedra/tameData';
+
+export type BuiltinShapeType = 'octahedron' | 'icosahedron' | 'cube' | 'tetrahedron' | 'dodecahedron' | 'dcTriangle' | 'dcSquare' | 'dcHexagon';
+export type ShapeType = BuiltinShapeType | TameShapeId;
 
 export interface GameState {
   isRolling: boolean;
@@ -16,6 +19,8 @@ export interface RollTarget {
   targetCenter: Vector3; // The center of the target tile
   directionAngle: number; // Angle for the helper arrow
   zoneVertices?: Vector3[]; // Optional: custom interaction zone vertices (projected adjacent face)
+  rollAngle?: number; // Roll angle for this edge (π − dihedral angle); falls back to definition.rollAngle
+  edgeVertexIndices?: [number, number]; // 0-based vertex indices of the edge rolled over
 }
 
 export interface HistoryStep {

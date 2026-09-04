@@ -3,6 +3,8 @@ import { TRIANGLE_SIDE, EDGE_LENGTH, GRID_COLOR_1, GRID_COLOR_2, VERTEX_COLORS }
 import { Color, DoubleSide, InstancedMesh, Object3D } from 'three';
 import { ShapeType } from '../types';
 import { getPolyhedron } from '../polyhedra';
+import { TameCell } from '../polyhedra/tameData';
+import { generateCellTiling, tilingCorners, CLASS_COLORS, FLOOR_TINT_FRONT, FLOOR_TINT_BACK } from '../polyhedra/cellTiling';
 
 interface FloorProps {
     shape: ShapeType;
@@ -15,10 +17,11 @@ export const Floor: React.FC<FloorProps> = ({ shape }) => {
   return (
     <group position={[0, -0.005, 0]}>
         {latticeType === 'none' ? <BlankFloorMesh /> :
+         latticeType === 'cell' ? <CellFloor cell={definition.tame!.cell} /> :
          latticeType === 'square' ? <SquareFloorMesh /> :
          latticeType === 'triangular' ? <TriangularFloorMesh /> :
          <HexagonalFloorMesh />}
-        {latticeType !== 'none' && <LatticeVertices shape={shape} />}
+        {latticeType !== 'none' && latticeType !== 'cell' && <LatticeVertices shape={shape} />}
         <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.01, 0]}>
             <ringGeometry args={[0.1, 0.15, 32]} />
             <meshBasicMaterial color="#3b82f6" opacity={0.8} transparent depthTest={false} />
@@ -284,5 +287,86 @@ const HexagonalFloorMesh = () => {
             </bufferGeometry>
             <meshStandardMaterial vertexColors roughness={0.8} metalness={0.0} side={DoubleSide} />
         </mesh>
+    );
+};
+
+/**
+ * Floor for tame polyhedra: the rolling tessellation (cells tinted by orientation) with
+ * the corner classes A/B/C marked in colour. Standard coordinates (sx, sy) are mapped to
+ * world (sx, 0, sy), the same map used to place the polyhedron.
+ */
+const CellFloor: React.FC<{ cell: TameCell }> = ({ cell }) => {
+    const { positions, colors, normals, dotPositions, dotColors } = useMemo(() => {
+        const R = 11;
+        const tris = generateCellTiling(cell, { minX: -R, minY: -R, maxX: R, maxY: R }, 1);
+        const posArray: number[] = [];
+        const colArray: number[] = [];
+        const front = new Color(FLOOR_TINT_FRONT);
+        const back = new Color(FLOOR_TINT_BACK);
+        for (const t of tris) {
+            const c = t.front ? front : back;
+            // world (sx, 0, sy); emit with upward-facing winding
+            const pts = [t.corners.A, t.corners.B, t.corners.C];
+            const ux = pts[1][0] - pts[0][0], uy = pts[1][1] - pts[0][1];
+            const vx = pts[2][0] - pts[0][0], vy = pts[2][1] - pts[0][1];
+            // in world coords (x, z) = (sx, sy) the +y normal needs clockwise (in sx,sy) winding
+            const ordered = (ux * vy - uy * vx) > 0 ? [pts[0], pts[2], pts[1]] : pts;
+            for (const p of ordered) {
+                posArray.push(p[0], 0, p[1]);
+                colArray.push(c.r, c.g, c.b);
+            }
+        }
+        const normArray = new Float32Array(posArray.length);
+        for (let i = 0; i < normArray.length; i += 3) { normArray[i] = 0; normArray[i + 1] = 1; normArray[i + 2] = 0; }
+        const dotPos: number[] = [];
+        const dotCol: number[] = [];
+        for (const corner of tilingCorners(tris)) {
+            if (Math.abs(corner.pos[0]) > R || Math.abs(corner.pos[1]) > R) continue;
+            dotPos.push(corner.pos[0], 0.005, corner.pos[1]);
+            const c = new Color(CLASS_COLORS[corner.cls]);
+            dotCol.push(c.r, c.g, c.b);
+        }
+        return {
+            positions: new Float32Array(posArray), colors: new Float32Array(colArray), normals: normArray,
+            dotPositions: new Float32Array(dotPos), dotColors: new Float32Array(dotCol)
+        };
+    }, [cell]);
+
+    return (
+        <group>
+            <mesh receiveShadow frustumCulled={false}>
+                <bufferGeometry>
+                    <bufferAttribute attach="attributes-position" count={positions.length / 3} array={positions} itemSize={3} />
+                    <bufferAttribute attach="attributes-color" count={colors.length / 3} array={colors} itemSize={3} />
+                    <bufferAttribute attach="attributes-normal" count={normals.length / 3} array={normals} itemSize={3} />
+                </bufferGeometry>
+                <meshStandardMaterial vertexColors roughness={0.8} metalness={0.0} side={DoubleSide} />
+            </mesh>
+            <InstancedDots positions={dotPositions} colors={dotColors} radius={0.06} />
+        </group>
+    );
+};
+
+const InstancedDots: React.FC<{ positions: Float32Array; colors: Float32Array; radius: number }> = ({ positions, colors, radius }) => {
+    const meshRef = React.useRef<InstancedMesh>(null);
+    React.useLayoutEffect(() => {
+        if (!meshRef.current) return;
+        const tempObj = new Object3D();
+        const count = positions.length / 3;
+        for (let i = 0; i < count; i++) {
+            tempObj.position.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+            tempObj.updateMatrix();
+            meshRef.current.setMatrixAt(i, tempObj.matrix);
+            meshRef.current.setColorAt(i, new Color(colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2]));
+        }
+        meshRef.current.instanceMatrix.needsUpdate = true;
+        if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    }, [positions, colors]);
+
+    return (
+        <instancedMesh key={positions.length} ref={meshRef} args={[undefined, undefined, positions.length / 3]} receiveShadow>
+            <sphereGeometry args={[radius, 12, 12]} />
+            <meshStandardMaterial roughness={0.5} metalness={0.1} />
+        </instancedMesh>
     );
 };

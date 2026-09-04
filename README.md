@@ -11,6 +11,7 @@ A 3D interactive simulation of polyhedra rolling on geometric surfaces. Roll var
 ## Features
 
 - **Multiple Polyhedra**: Switch between octahedron, cube, icosahedron, tetrahedron, and doubly covered polygons
+- **Tame Polyhedra**: All 48 surfaces with max overlap thickness K = 2..7, rolling on their (2,4,4), (2,3,6) or (3,3,3) cell tiling with the A/B/C corner colouring painted on the faces
 - **Interactive Rolling**: Click highlighted zones to roll the polyhedron along edges
 - **Turtle Graphics**: Draw paths on the polyhedron surface using turtle commands
 - **Real-time Tracking**: Monitor current face, position coordinates, and orientation
@@ -21,7 +22,7 @@ A 3D interactive simulation of polyhedra rolling on geometric surfaces. Roll var
 
 - **Mouse**: Click highlighted zones around the polyhedron to roll it
 - **Orbit Controls**: Click and drag to rotate the camera, scroll to zoom
-- **Shape Selection**: Use the buttons in the top-left to switch between polyhedra
+- **Shape Selection**: Use the searchable menu in the top-left to switch between polyhedra
 - **Turtle Console**: Use the side panel to write turtle graphics commands
 
 ## Turtle Graphics Syntax
