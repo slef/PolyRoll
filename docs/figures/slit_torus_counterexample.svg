@@ -1,0 +1,47 @@
+<svg width="100%" viewBox="0 0 760 560" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+<text x="380" y="26" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">Two unit tori slit-glued along a horizontal slit of length &#955; = 1/&#8730;2</text>
+<!-- torus 1 row: A1 [0,l], B1 [l,1], scale 340, origin (150,60) -->
+<g stroke="#222" fill="#cfe8e6">
+<rect x="150" y="60" width="240" height="170" stroke-width="2"/>
+<rect x="390" y="60" width="100" height="170" stroke-width="2"/>
+</g>
+<g stroke="#222" fill="#e4d9f0">
+<rect x="150" y="300" width="240" height="170" stroke-width="2"/>
+<rect x="390" y="300" width="100" height="170" stroke-width="2"/>
+</g>
+<text x="270" y="150" text-anchor="middle" font-size="14" fill="#222">A&#8321;  (&#955; &#215; 1)</text>
+<text x="440" y="150" text-anchor="middle" font-size="13" fill="#222">B&#8321;</text>
+<text x="270" y="390" text-anchor="middle" font-size="14" fill="#222">A&#8322;  (&#955; &#215; 1)</text>
+<text x="440" y="390" text-anchor="middle" font-size="13" fill="#222">B&#8322;</text>
+<!-- horizontal edge labels -->
+<text x="270" y="54" text-anchor="middle" font-size="13" font-style="italic" fill="#b03030">a</text>
+<text x="270" y="248" text-anchor="middle" font-size="13" font-style="italic" fill="#b03030">b</text>
+<text x="270" y="294" text-anchor="middle" font-size="13" font-style="italic" fill="#b03030">b&#772;</text>
+<text x="270" y="490" text-anchor="middle" font-size="13" font-style="italic" fill="#b03030">a&#772;</text>
+<text x="440" y="54" text-anchor="middle" font-size="13" font-style="italic" fill="#2a6f6a">c</text>
+<text x="440" y="248" text-anchor="middle" font-size="13" font-style="italic" fill="#2a6f6a">c&#772;</text>
+<text x="440" y="294" text-anchor="middle" font-size="13" font-style="italic" fill="#2a6f6a">d</text>
+<text x="440" y="490" text-anchor="middle" font-size="13" font-style="italic" fill="#2a6f6a">d&#772;</text>
+<!-- vertical outer edges -->
+<text x="138" y="150" text-anchor="middle" font-size="13" font-style="italic" fill="#7a5fb0">e</text>
+<text x="502" y="150" text-anchor="middle" font-size="13" font-style="italic" fill="#7a5fb0">e&#772;</text>
+<text x="138" y="390" text-anchor="middle" font-size="13" font-style="italic" fill="#7a5fb0">f</text>
+<text x="502" y="390" text-anchor="middle" font-size="13" font-style="italic" fill="#7a5fb0">f&#772;</text>
+<!-- vertices: u at x=0 and x=1, w at x=lambda -->
+<g>
+<circle cx="150" cy="60" r="7" fill="#fbd0cb" stroke="#e74c3c" stroke-width="1.6"/><text x="150" y="64" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">u</text>
+<circle cx="490" cy="60" r="7" fill="#fbd0cb" stroke="#e74c3c" stroke-width="1.6"/><text x="490" y="64" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">u</text>
+<circle cx="150" cy="230" r="7" fill="#fbd0cb" stroke="#e74c3c" stroke-width="1.6"/><text x="150" y="234" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">u</text>
+<circle cx="490" cy="230" r="7" fill="#fbd0cb" stroke="#e74c3c" stroke-width="1.6"/><text x="490" y="234" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">u</text>
+<circle cx="150" cy="300" r="7" fill="#fbd0cb" stroke="#e74c3c" stroke-width="1.6"/><text x="150" y="304" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">u</text>
+<circle cx="490" cy="300" r="7" fill="#fbd0cb" stroke="#e74c3c" stroke-width="1.6"/><text x="490" y="304" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">u</text>
+<circle cx="150" cy="470" r="7" fill="#fbd0cb" stroke="#e74c3c" stroke-width="1.6"/><text x="150" y="474" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">u</text>
+<circle cx="490" cy="470" r="7" fill="#fbd0cb" stroke="#e74c3c" stroke-width="1.6"/><text x="490" y="474" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">u</text>
+<circle cx="390" cy="60" r="7" fill="#c9defc" stroke="#3b82f6" stroke-width="1.6"/><text x="390" y="64" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">w</text>
+<circle cx="390" cy="230" r="7" fill="#c9defc" stroke="#3b82f6" stroke-width="1.6"/><text x="390" y="234" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">w</text>
+<circle cx="390" cy="300" r="7" fill="#c9defc" stroke="#3b82f6" stroke-width="1.6"/><text x="390" y="304" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">w</text>
+<circle cx="390" cy="470" r="7" fill="#c9defc" stroke="#3b82f6" stroke-width="1.6"/><text x="390" y="474" text-anchor="middle" font-size="9" font-weight="bold" fill="#222">w</text>
+</g>
+<text x="380" y="516" text-anchor="middle" font-size="12" fill="#222">a: bot A&#8321; &#8596; top A&#8322;;  b: top A&#8321; &#8596; bot A&#8322; (the slit, length &#955;);  c,d: top&#8596;bot of B&#7522; within each torus (length 1&#8722;&#955;);</text>
+<text x="380" y="534" text-anchor="middle" font-size="12" fill="#222">e,f: left&#8596;right per torus. Vertices: u, w with cone angle 720&#176; each; no flat vertices. All gluings are integer translations.</text>
+</svg>
