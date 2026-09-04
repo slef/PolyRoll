@@ -4,11 +4,13 @@ import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import { Simulation } from './components/Simulation';
 import { Floor } from './components/Floor';
 import { TurtleConsole } from './components/TurtleConsole';
+import { ShapeMenu } from './components/ShapeMenu';
 import { Info, Rotate3d, Target, History, ChevronRight } from 'lucide-react';
 import { HistoryStep, ShapeType, PathSegment, PathResult, EdgeCrossing, FaceStamp } from './types';
 import { Vector3, Quaternion } from 'three';
 import { parseCommands, generatePath, generateFlatPath, getAdjacentFace } from './utils/turtle';
-import { getPolyhedron, FaceData } from './polyhedra';
+import { getPolyhedron, POLYHEDRA, FaceData } from './polyhedra';
+import { CLASS_COLORS, CELL_DESCRIPTION } from './polyhedra/cellTiling';
 import * as THREE from 'three';
 
 export default function App() {
@@ -21,11 +23,11 @@ export default function App() {
 
   const getFaceOrientation = useCallback((quat: Quaternion, faceIndex: number, shape: ShapeType, initialCalibrationAngle?: number): {label: string, rawAngle: number} => {
     const definition = getPolyhedron(shape);
-    const centers = definition.faceCenters;
     const maxFaces = definition.faceCount;
 
     if (faceIndex < 1 || faceIndex > maxFaces) return { label: '?', rawAngle: 0 };
-    const localNormal = centers[faceIndex - 1].clone().normalize();
+    // Use the true face normal (for irregular polyhedra the centroid direction differs)
+    const localNormal = definition.getFaces()[faceIndex - 1].normal.clone().normalize();
     const textLocalQuat = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), localNormal);
     const textWorldQuat = quat.clone().multiply(textLocalQuat);
     const textUpWorld = new Vector3(0, 1, 0).applyQuaternion(textWorldQuat);
@@ -46,7 +48,7 @@ export default function App() {
         position: definition.initialPosition.clone(),
         quaternion: definition.initialQuaternion.clone(),
         faceIndex: 1,
-        orientation: 'X',
+        orientation: definition.getOrientationLabel(0),
         coordinate: { u: 0, v: 0 },
         moveLabel: "START",
         moveIndex: 0,
@@ -72,32 +74,12 @@ export default function App() {
 
   const [history, setHistory] = useState<HistoryStep[]>(() => createInitialHistory('octahedron'));
   const [calibAngles] = useState<Record<ShapeType, number>>(() => {
-      const octDef = getPolyhedron('octahedron');
-      const icoDef = getPolyhedron('icosahedron');
-      const cubeDef = getPolyhedron('cube');
-      const tetDef = getPolyhedron('tetrahedron');
-      const dcTriDef = getPolyhedron('dcTriangle');
-      const dcSqDef = getPolyhedron('dcSquare');
-      const dcHexDef = getPolyhedron('dcHexagon');
-      const dodDef = getPolyhedron('dodecahedron');
-      const oct = getFaceOrientation(octDef.initialQuaternion, 1, 'octahedron');
-      const ico = getFaceOrientation(icoDef.initialQuaternion, 1, 'icosahedron');
-      const cub = getFaceOrientation(cubeDef.initialQuaternion, 1, 'cube');
-      const tet = getFaceOrientation(tetDef.initialQuaternion, 1, 'tetrahedron');
-      const dcTri = getFaceOrientation(dcTriDef.initialQuaternion, 1, 'dcTriangle');
-      const dcSq = getFaceOrientation(dcSqDef.initialQuaternion, 1, 'dcSquare');
-      const dcHex = getFaceOrientation(dcHexDef.initialQuaternion, 1, 'dcHexagon');
-      const dod = getFaceOrientation(dodDef.initialQuaternion, 1, 'dodecahedron');
-      return {
-        octahedron: oct.rawAngle,
-        icosahedron: ico.rawAngle,
-        cube: cub.rawAngle,
-        tetrahedron: tet.rawAngle,
-        dodecahedron: dod.rawAngle,
-        dcTriangle: dcTri.rawAngle,
-        dcSquare: dcSq.rawAngle,
-        dcHexagon: dcHex.rawAngle
-      };
+      // Calibrate every registered shape from its initial orientation
+      const angles: Partial<Record<ShapeType, number>> = {};
+      (Object.keys(POLYHEDRA) as ShapeType[]).forEach(id => {
+        angles[id] = getFaceOrientation(POLYHEDRA[id].initialQuaternion, 1, id).rawAngle;
+      });
+      return angles as Record<ShapeType, number>;
   });
 
   const changeShape = (shape: ShapeType) => {
@@ -122,6 +104,7 @@ export default function App() {
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const currentStep = history[currentStepIndex];
+  const tame = getPolyhedron(currentShape).tame;
   const historyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -217,29 +200,31 @@ export default function App() {
     <div className="w-full h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
       <header className="absolute top-0 left-0 w-full p-6 z-10 flex justify-between items-start pointer-events-none">
         <div className="flex flex-col gap-2 pointer-events-auto">
-            <div className="bg-white/90 backdrop-blur-md p-4 rounded-xl shadow-lg border border-slate-200">
+            <div className="relative z-20 bg-white/90 backdrop-blur-md p-4 rounded-xl shadow-lg border border-slate-200">
                 <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                     <Rotate3d className="text-indigo-600" /> PolyRoll
                 </h1>
-                <div className="flex flex-col gap-2 mt-3">
-                    <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
-                        {(['tetrahedron', 'cube', 'octahedron', 'icosahedron', 'dodecahedron'] as ShapeType[]).map(s => (
-                            <button key={s} onClick={() => changeShape(s)}
-                                className={`flex-1 px-3 py-1.5 rounded-md text-sm font-semibold transition-all capitalize ${currentShape === s ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                {s}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="flex bg-slate-100 rounded-lg p-1 gap-1">
-                        {(['dcTriangle', 'dcSquare', 'dcHexagon'] as ShapeType[]).map(s => (
-                            <button key={s} onClick={() => changeShape(s)}
-                                className={`flex-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-all ${currentShape === s ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                {s === 'dcTriangle' ? 'DC △' : s === 'dcSquare' ? 'DC □' : 'DC ⬡'}
-                            </button>
-                        ))}
-                    </div>
+                <div className="flex flex-col gap-2 mt-3 w-72">
+                    <ShapeMenu current={currentShape} onSelect={changeShape} />
+                    {tame && (
+                        <div className="text-[11px] text-slate-600 leading-snug px-1">
+                            <div>
+                                <span className="font-bold text-slate-800">{tame.display}</span>
+                                {tame.oldName && <span className="text-slate-400"> (was {tame.oldName})</span>}
+                                {' · '}max overlap <span className="font-bold">K = {tame.K}</span>
+                            </div>
+                            <div>{CELL_DESCRIPTION[tame.cell]} {tame.cell}{tame.description ? ` · ${tame.description}` : ''}</div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                                <span className="text-slate-400">vertices:</span>
+                                {tame.angles.map((a, i) => (
+                                    <span key={i} className="inline-flex items-center gap-1">
+                                        <span className="inline-block w-2 h-2 rounded-full" style={{ background: CLASS_COLORS[tame.vertexClasses[i]] }} />
+                                        {i + 1}: {a}° ({tame.vertexClasses[i]})
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="flex gap-2">
@@ -250,15 +235,17 @@ export default function App() {
                     </div>
                     <div className="text-2xl font-black text-indigo-600 flex items-baseline gap-1">
                         <span>#{currentStep.faceIndex}</span>
-                        <span className="text-sm font-bold text-slate-400">({currentStep.orientation})</span>
+                        {currentStep.orientation && <span className="text-sm font-bold text-slate-400">({currentStep.orientation})</span>}
                     </div>
                 </div>
+                {!tame && (
                 <div className="bg-white/90 backdrop-blur-md p-4 rounded-xl shadow-lg border border-slate-200 min-w-[8rem]">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-[10px] font-semibold uppercase text-slate-400">Position</span>
                     </div>
                     <div className="text-lg font-mono font-bold text-slate-700">({currentStep.coordinate.u}, {currentStep.coordinate.v})</div>
                 </div>
+                )}
             </div>
         </div>
         <div className="bg-white/90 backdrop-blur-md p-4 rounded-xl shadow-lg border border-slate-200 max-w-sm pointer-events-auto">

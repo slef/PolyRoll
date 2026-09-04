@@ -2,10 +2,11 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Quaternion, Matrix4, Group, Color } from 'three';
 import * as THREE from 'three';
-import { Text, useCursor, Line } from '@react-three/drei';
+import { Text, useCursor, Line, Billboard } from '@react-three/drei';
 import { TRIANGLE_SIDE, EDGE_LENGTH } from '../constants';
 import { RollTarget, ShapeType, PathSegment, EdgeCrossing, FaceStamp } from '../types';
 import { getPolyhedron, PolyhedronDefinition } from '../polyhedra';
+import { CELL_TINT_FRONT, CELL_TINT_BACK } from '../polyhedra/cellTiling';
 
 interface SimulationProps {
   shape: ShapeType;
@@ -51,8 +52,9 @@ export const Simulation: React.FC<SimulationProps> = ({
 
   // Get polyhedron definition from registry
   const definition = getPolyhedron(shape);
-  const rollAngle = definition.rollAngle;
-  const faceCenters = definition.faceCenters;
+  const faces = useMemo(() => definition.getFaces(), [definition]);
+  // Roll angle of the roll in progress (π − dihedral angle of the edge rolled over)
+  const rollAngleRef = useRef(definition.rollAngle);
 
   // Start roll animation when crossings are provided
   useEffect(() => {
@@ -116,6 +118,12 @@ export const Simulation: React.FC<SimulationProps> = ({
 
     const bottomFace = worldFaces[bottomFaceIndex];
     const bottomFaceVertexCount = bottomFace.vertices.length;
+    const bottomCentroid = bottomFace.vertices
+      .reduce((acc, v) => acc.add(v), new Vector3())
+      .divideScalar(bottomFaceVertexCount);
+    bottomCentroid.y = 0;
+    const worldVertices = definition.vertices.map(v => v.clone().applyMatrix4(matrix));
+    const vertexIndexOf = (p: Vector3) => worldVertices.findIndex(v => v.distanceTo(p) < 1e-4);
 
     const newTargets: RollTarget[] = [];
 
@@ -144,17 +152,24 @@ export const Simulation: React.FC<SimulationProps> = ({
 
       if (!adjacentFace) continue;
 
-      // Calculate roll parameters
+      // Calculate roll parameters.
+      // The roll axis is the edge itself; the roll direction is the outward normal of the
+      // edge within the bottom face (for regular faces this is the centre-to-edge direction).
       const pivot = new Vector3().addVectors(edgeV1, edgeV2).multiplyScalar(0.5);
+      const edgeDir = new Vector3().subVectors(edgeV2, edgeV1);
+      edgeDir.y = 0;
+      edgeDir.normalize();
+      const toMid = new Vector3(pivot.x - bottomCentroid.x, 0, pivot.z - bottomCentroid.z);
+      const rollDirection = toMid.sub(edgeDir.clone().multiplyScalar(toMid.dot(edgeDir))).normalize();
+      const axis = new Vector3(0, 1, 0).cross(rollDirection).normalize();
       const currentFloorCenter = new Vector3(pos.x, 0, pos.z);
       const toPivot = new Vector3().subVectors(pivot, currentFloorCenter);
-      const rollDirection = toPivot.clone().normalize();
-      const axis = new Vector3(0, 1, 0).cross(rollDirection).normalize();
 
-      // Create interaction zone: project adjacent face vertices to ground after roll
-      const rollAngle = definition.rollAngle;
+      // Roll angle = angle between the outward normals of the two faces (π − dihedral angle)
+      const rollAngle = Math.acos(Math.min(1, Math.max(-1, bottomFace.normal.dot(adjacentFace.normal))));
       const rollQuat = new Quaternion().setFromAxisAngle(axis, rollAngle);
 
+      // Create interaction zone: project adjacent face vertices to ground after roll
       const zoneVertices: Vector3[] = adjacentFace.vertices.map(v => {
         // Rotate vertex around pivot by roll angle
         const relative = v.clone().sub(pivot);
@@ -165,13 +180,16 @@ export const Simulation: React.FC<SimulationProps> = ({
       });
 
       const targetCenter = new Vector3().addVectors(currentFloorCenter, toPivot.clone().multiplyScalar(2));
+      const i1 = vertexIndexOf(edgeV1), i2 = vertexIndexOf(edgeV2);
 
       newTargets.push({
         axis,
         point: pivot,
         targetCenter,
-        directionAngle: Math.atan2(toPivot.z, toPivot.x),
-        zoneVertices
+        directionAngle: Math.atan2(rollDirection.z, rollDirection.x),
+        zoneVertices,
+        rollAngle,
+        edgeVertexIndices: i1 >= 0 && i2 >= 0 ? [i1, i2] : undefined
       });
     }
 
@@ -181,8 +199,8 @@ export const Simulation: React.FC<SimulationProps> = ({
   const calculateFaceIndex = (quat: Quaternion) => {
     let bestDot = -1;
     let faceIndex = 0;
-    faceCenters.forEach((local, idx) => {
-        const worldNormal = local.clone().normalize().applyQuaternion(quat);
+    faces.forEach((face, idx) => {
+        const worldNormal = face.normal.clone().applyQuaternion(quat);
         const dot = worldNormal.dot(new Vector3(0, -1, 0));
         if (dot > bestDot) {
             bestDot = dot;
@@ -192,10 +210,11 @@ export const Simulation: React.FC<SimulationProps> = ({
     return faceIndex + 1;
   };
 
-  const initiateRoll = (axis: Vector3, pivot: Vector3, moveData?: {label: string, delta: {u: number, v: number}}) => {
+  const initiateRoll = (axis: Vector3, pivot: Vector3, angle: number, moveData?: {label: string, delta: {u: number, v: number}}) => {
     if (!meshRef.current) return;
 
     setIsRolling(true);
+    rollAngleRef.current = angle;
     rollStartPos.current.copy(meshRef.current.position);
     rollStartQuat.current.copy(meshRef.current.quaternion);
     rollAxis.current.copy(axis);
@@ -226,8 +245,8 @@ export const Simulation: React.FC<SimulationProps> = ({
     if (isRollAnimating && !isRolling) {
       // This is a programmatic call during animation - allow it
     }
-    const { label, delta } = definition.getMoveData(target.directionAngle);
-    initiateRoll(target.axis, target.point, { label, delta });
+    const { label, delta } = definition.getMoveData(target.directionAngle, target.edgeVertexIndices);
+    initiateRoll(target.axis, target.point, target.rollAngle ?? definition.rollAngle, { label, delta });
   };
 
   useFrame((_state, delta) => {
@@ -238,7 +257,7 @@ export const Simulation: React.FC<SimulationProps> = ({
 
         const t = rollProgress.current;
         const easedT = t * (2 - t);
-        const angle = easedT * rollAngle;
+        const angle = easedT * rollAngleRef.current;
         const qRot = new Quaternion().setFromAxisAngle(rollAxis.current, angle);
         const newQuat = qRot.clone().multiply(rollStartQuat.current);
         const vecToCenter = new Vector3().subVectors(rollStartPos.current, rollPivot.current);
@@ -282,7 +301,7 @@ export const Simulation: React.FC<SimulationProps> = ({
             <StampMesh key={i} stamp={stamp} />
         ))}
         <group ref={meshRef} position={position} quaternion={quaternion}>
-            <PolyhedronMesh definition={definition} />
+            <PolyhedronMesh definition={definition} quaternion={quaternion} />
             {displayPathSegments.map((segment, i) => (
                 <Line
                     key={`mesh-path-${i}`}
@@ -314,64 +333,81 @@ export const Simulation: React.FC<SimulationProps> = ({
 };
 
 // Unified PolyhedronMesh component
-const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ definition }) => {
+const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition; quaternion: Quaternion }> = ({ definition, quaternion }) => {
+  // World "up" expressed in local coordinates (used to lift vertex labels off the floor)
+  const localUp = useMemo(() => new Vector3(0, 1, 0).applyQuaternion(quaternion.clone().invert()), [quaternion]);
   // Compute faces for both geometry and labels
   const faces = useMemo(() => definition.getFaces(), [definition]);
+  // Tame polyhedra: the faces are painted with the cells of the rolling tessellation
+  const cells = useMemo(() => definition.getSurfaceCells?.() ?? null, [definition]);
+  const marks = useMemo(() => definition.getSurfaceMarks?.() ?? [], [definition]);
+
+  // Detect doubly covered polygons (2 faces with opposite normals at same location)
+  const isDoublyCovered = definition.faceCount === 2 && Math.abs(definition.dihedralAngle) < 0.01;
+  const VISUAL_OFFSET = 0.002;
 
   const geometry = useMemo(() => {
     const pos: number[] = [];
     const col: number[] = [];
 
-    // Detect doubly covered polygons (2 faces with opposite normals at same location)
-    const isDoublyCovered = definition.faceCount === 2 &&
-                            Math.abs(definition.dihedralAngle) < 0.01;
-    const VISUAL_OFFSET = 0.002;
-
-    faces.forEach((face) => {
-      const faceColor = new Color(definition.getFaceColor(face.index - 1));
-      let verts = face.vertices;
-
-      // Apply visual offset for doubly covered polygons to prevent z-fighting
-      if (isDoublyCovered) {
-        const offset = face.index === 1 ? -VISUAL_OFFSET : VISUAL_OFFSET;
-        verts = verts.map(v => new Vector3(v.x, v.y + offset, v.z));
-      }
-
-      // Triangulate: split into triangles using fan triangulation
-      if (verts.length === 3) {
-        // Already a triangle
-        verts.forEach((v) => {
+    // Fan triangulation of a convex polygon (WebGL only renders triangles)
+    const pushPolygon = (verts: Vector3[], color: Color) => {
+      for (let i = 1; i < verts.length - 1; i++) {
+        [verts[0], verts[i], verts[i + 1]].forEach(v => {
           pos.push(v.x, v.y, v.z);
-          col.push(faceColor.r, faceColor.g, faceColor.b);
+          col.push(color.r, color.g, color.b);
         });
-      } else if (verts.length === 4) {
-        // Quad: split into 2 triangles (0,1,2) and (0,2,3)
-        const triangleVerts = [verts[0], verts[1], verts[2], verts[0], verts[2], verts[3]];
-        triangleVerts.forEach((v) => {
-          if (v) {
-            pos.push(v.x, v.y, v.z);
-            col.push(faceColor.r, faceColor.g, faceColor.b);
-          }
-        });
-      } else {
-        // N-gon (n > 4): fan triangulation from vertex 0
-        // Creates triangles: (0,1,2), (0,2,3), (0,3,4), ..., (0,n-2,n-1)
-        for (let i = 1; i < verts.length - 1; i++) {
-          pos.push(verts[0].x, verts[0].y, verts[0].z);
-          col.push(faceColor.r, faceColor.g, faceColor.b);
-          pos.push(verts[i].x, verts[i].y, verts[i].z);
-          col.push(faceColor.r, faceColor.g, faceColor.b);
-          pos.push(verts[i + 1].x, verts[i + 1].y, verts[i + 1].z);
-          col.push(faceColor.r, faceColor.g, faceColor.b);
-        }
       }
-    });
+    };
+
+    if (cells) {
+      cells.forEach(cell => {
+        const color = new Color(cell.front ? CELL_TINT_FRONT : CELL_TINT_BACK);
+        let verts = cell.vertices;
+        if (isDoublyCovered) {
+          const off = cell.normal.clone().multiplyScalar(VISUAL_OFFSET);
+          verts = verts.map(v => v.clone().add(off));
+        }
+        pushPolygon(verts, color);
+      });
+    } else {
+      faces.forEach((face) => {
+        const faceColor = new Color(definition.getFaceColor(face.index - 1));
+        let verts = face.vertices;
+
+        // Apply visual offset for doubly covered polygons to prevent z-fighting
+        if (isDoublyCovered) {
+          const offset = face.index === 1 ? -VISUAL_OFFSET : VISUAL_OFFSET;
+          verts = verts.map(v => new Vector3(v.x, v.y + offset, v.z));
+        }
+        pushPolygon(verts, faceColor);
+      });
+    }
 
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     geom.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+    geom.computeVertexNormals();
     return geom;
-  }, [faces, definition]);
+  }, [faces, cells, definition, isDoublyCovered]);
+
+  // Thin lines along the cell boundaries (tame polyhedra only)
+  const cellEdgeGeometry = useMemo(() => {
+    if (!cells) return null;
+    const arr: number[] = [];
+    cells.forEach(cell => {
+      const off = cell.normal.clone().multiplyScalar(0.003);
+      const n = cell.vertices.length;
+      for (let i = 0; i < n; i++) {
+        const a = cell.vertices[i].clone().add(off);
+        const b = cell.vertices[(i + 1) % n].clone().add(off);
+        arr.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      }
+    });
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
+    return geom;
+  }, [cells]);
 
   // Get yellow points for cube (if available)
   const yellowPoints = definition.getYellowPoints?.() || [];
@@ -383,11 +419,47 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
         <meshStandardMaterial vertexColors roughness={0.5} />
       </mesh>
 
+      {/* Cell boundaries and polyhedron edges (tame polyhedra) */}
+      {cellEdgeGeometry && (
+        <lineSegments geometry={cellEdgeGeometry}>
+          <lineBasicMaterial color="#1e293b" transparent opacity={0.35} />
+        </lineSegments>
+      )}
+      {cells && faces.map(face => {
+        const off = face.normal.clone().multiplyScalar(0.004);
+        const pts = face.vertices.map(v => v.clone().add(off));
+        return (
+          <Line key={`edge-${face.index}`} points={[...pts, pts[0]]} color="#0f172a" lineWidth={2} />
+        );
+      })}
+
       {/* Vertices */}
       {definition.vertices.map((v, i) => (
         <mesh key={`v-${i}`} position={v} castShadow>
           <sphereGeometry args={[definition.vertexSphereRadius, 16, 16]} />
           <meshStandardMaterial color={definition.getVertexColor(i)} roughness={0.2} metalness={0.2} />
+        </mesh>
+      ))}
+
+      {/* Vertex numbers (tame polyhedra: numbering of the handoff figures) */}
+      {definition.showVertexLabels && definition.vertices.map((v, i) => {
+        // push the label outward and slightly up (flat polygons lie at floor level)
+        const dir = v.clone().normalize();
+        const p = v.clone().addScaledVector(dir, 0.14).addScaledVector(localUp, 0.12);
+        return (
+          <Billboard key={`vl-${i}`} position={p}>
+            <Text fontSize={0.13} color="#0f172a" anchorX="center" anchorY="middle" outlineWidth={0.012} outlineColor="#ffffff">
+              {i + 1}
+            </Text>
+          </Billboard>
+        );
+      })}
+
+      {/* Lattice corners lying on the surface that are not vertices */}
+      {marks.map((m, i) => (
+        <mesh key={`mk-${i}`} position={m.position}>
+          <sphereGeometry args={[0.035, 12, 12]} />
+          <meshStandardMaterial color={m.color} roughness={0.3} />
         </mesh>
       ))}
 
@@ -404,16 +476,14 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
         const normal = face.normal.clone().normalize();
 
         // Apply visual offset for doubly covered polygons
-        const isDoublyCovered = definition.faceCount === 2 && Math.abs(definition.dihedralAngle) < 0.01;
-        const VISUAL_OFFSET = 0.002;
         let center = face.center.clone();
         if (isDoublyCovered) {
           const offset = face.index === 1 ? -VISUAL_OFFSET : VISUAL_OFFSET;
           center.y += offset;
         }
 
-        // Position label slightly beyond face center along normal
-        const pos = center.add(normal.clone().multiplyScalar(0.01));
+        // Position label slightly beyond face center along normal (above any lattice mark)
+        const pos = center.add(normal.clone().multiplyScalar(definition.tame ? 0.05 : 0.01));
         const quaternion = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), normal);
         return (
           <group key={i} position={pos} quaternion={quaternion}>
@@ -422,7 +492,7 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
               color="white"
               anchorX="center"
               anchorY="middle"
-              outlineWidth={definition.faceLabelSize === 0.2 ? 0.015 : 0.02}
+              outlineWidth={definition.faceLabelSize <= 0.2 ? 0.015 : 0.02}
               outlineColor="#000000"
             >
               {face.index}
@@ -434,7 +504,7 @@ const PolyhedronMesh: React.FC<{ definition: PolyhedronDefinition }> = ({ defini
   );
 };
 
-const InteractionZone: React.FC<{ target: RollTarget; latticeType: 'square' | 'triangular' | 'hexagonal'; onClick: () => void }> = ({ target, latticeType, onClick }) => {
+const InteractionZone: React.FC<{ target: RollTarget; latticeType: string; onClick: () => void }> = ({ target, latticeType, onClick }) => {
     const [hovered, setHover] = useState(false);
     useCursor(hovered);
 

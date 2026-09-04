@@ -47,6 +47,29 @@ The codebase uses a **configuration-based architecture** where each polyhedron i
 - No shape-specific conditionals in components
 - Adding new polyhedra: ~100 lines in one file instead of modifying 6 files
 
+### Tame Polyhedra (bounded overlap thickness)
+
+`docs/` is a research handoff: the enumeration of all convex polyhedra with max overlap
+thickness K = 2..7 (16 solids + 32 doubly covered polygons, named T_K^c_i, `-f` = flat).
+Each rolls on one of three triangle tilings ("cells": (2,4,4) 45-45-90, (2,3,6) 30-60-90,
+(3,3,3) equilateral) whose corners are 3-coloured A/B/C; a vertex of class X always lands on
+a corner of class X, which is what bounds the overlap.
+
+- **[scripts/gen_tame_data.py](scripts/gen_tame_data.py)** (run with `python3.11`, needs numpy):
+  reads `docs/obj/*.obj` and the enumeration pickles, unfolds each surface, computes its
+  rolling group, aligns it with the standard cell tiling and verifies K. Emits
+  **[polyhedra/tameData.ts](polyhedra/tameData.ts)** (generated, do not edit): vertices,
+  faces, vertex classes and per-face affine frames (standard tiling coords -> 3D).
+- **[polyhedra/tame.ts](polyhedra/tame.ts)**: `createTamePolyhedron(data)` builds a
+  `PolyhedronDefinition` with `latticeType: 'cell'`, `tame`, `getSurfaceCells()` (cells clipped
+  to each face) and `getSurfaceMarks()` (lattice corners on faces that are not vertices).
+  Face 1 is placed so that standard coords (sx, sy) map to world (sx, 0, sy).
+- **[polyhedra/cellTiling.ts](polyhedra/cellTiling.ts)**: tiling generation by reflection,
+  class colours, convex clipping. Used by both the floor and the face decoration.
+- Rolling is generic for irregular polyhedra: [Simulation.tsx](components/Simulation.tsx)
+  computes a per-edge roll angle (π − dihedral) and uses the edge itself as the axis.
+- The shape selector is a grouped dropdown ([components/ShapeMenu.tsx](components/ShapeMenu.tsx)).
+
 ### Core State Management
 
 The application state lives in [App.tsx](App.tsx), which manages:
